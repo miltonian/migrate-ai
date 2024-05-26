@@ -1,29 +1,25 @@
-#!/bin/sh
+#!/bin/bash
 
 set -e
 
-OS=$(uname)
-ARCH=$(uname -m)
-if [ "$OS" = "Linux" ]; then
-  if [ "$ARCH" = "x86_64" ]; then
-    URL="https://github.com/miltonian/celp-cli/releases/download/v1.0.0/celp-cli-linux"
-  else
-    echo "Unsupported architecture: $ARCH"
-    exit 1
-  fi
-elif [ "$OS" = "Darwin" ]; then
-  URL="https://github.com/miltonian/celp-cli/releases/download/v1.0.0/celp-cli-macos"
-else
+VERSION="v1.0.0"
+OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+ARCH="$(uname -m)"
+
+if [ "$OS" != "linux" ] && [ "$OS" != "darwin" ]; then
   echo "Unsupported OS: $OS"
   exit 1
 fi
 
-DESTINATION="/usr/local/bin/celp-cli"
+if [ "$ARCH" != "x86_64" ]; then
+  echo "Unsupported architecture: $ARCH"
+  exit 1
+fi
 
-echo "Downloading celp-cli from $URL..."
-curl -L $URL -o $DESTINATION
+URL="https://github.com/miltonian/celp-cli/releases/download/${VERSION}/celp-cli-${OS}"
 
-echo "Making celp-cli executable..."
-chmod +x $DESTINATION
+echo "Downloading celp-cli from ${URL}..."
+curl -L -o /usr/local/bin/celp-cli "${URL}"
+chmod +x /usr/local/bin/celp-cli
 
-echo "celp-cli installed successfully at $DESTINATION"
+echo "celp-cli installed successfully."
