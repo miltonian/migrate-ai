@@ -2,7 +2,7 @@
 
 set -e
 
-VERSION="v1.0.0"
+VERSION="1.0.2"
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"
 
