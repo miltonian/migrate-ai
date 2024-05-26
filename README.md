@@ -57,22 +57,3 @@ We welcome contributions! Please see our Contributing Guide for more details.
 ## License
 
 This project is licensed under the MIT License. See the LICENSE file for details.
-
-## Steps to Use
-
-1. **Create the `README.md` File**:
-
-   - Copy the content above and save it into a file named `README.md` in the root of your project repository.
-
-2. **Customize Links and Placeholders**:
-
-   - Replace `yourusername` with your actual GitHub username or organization name.
-   - Ensure the links to the Wiki, issues, CONTRIBUTING guide, and LICENSE file are correct.
-
-3. **Add and Commit the `README.md`**:
-   - Add the `README.md` to your repository:
-     ```sh
-     git add README.md
-     git commit -m "Add README.md"
-     git push origin main
-     ```
