@@ -7,11 +7,9 @@
     "build": "tsc",
     "start": "node dist/index.js"
   },
+  "repository": "https://github.com/miltonian/celp-cli",
+  "homepage": "https://github.com/miltonian/celp-cli#readme",
   "dependencies": {
-    "@types/cli-progress": "^3.11.5",
-    "@types/inquirer": "^9.0.7",
-    "@types/lodash": "^4.17.4",
-    "@types/uuid": "^9.0.8",
     "@typescript-eslint/typescript-estree": "^7.10.0",
     "cli-progress": "^3.12.0",
     "commander": "^12.1.0",
@@ -22,6 +20,12 @@
     "openai": "^4.47.1",
     "openai-chat-tokens": "^0.2.8",
     "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/cli-progress": "^3.11.5",
+    "@types/inquirer": "^9.0.7",
+    "@types/lodash": "^4.17.4",
+    "@types/uuid": "^9.0.8"
   },
   "files": [
     "dist/**/*"
