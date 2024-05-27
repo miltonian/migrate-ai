@@ -4,8 +4,8 @@ import { TSESTree } from "@typescript-eslint/types";
 import { parse } from "@typescript-eslint/typescript-estree";
 import * as cliProgress from "cli-progress";
 import { Command } from "commander";
+import * as fg from "fast-glob";
 import * as fs from "fs";
-import * as glob from "glob-promise";
 import * as path from "path";
 import { v4 } from "uuid";
 import {
@@ -714,7 +714,7 @@ async function findFirstTestFile(
 
       try {
         // Search for files matching the pattern in the computed directory
-        const files = await glob(searchPattern, { nodir: true }); // Use glob to find files matching the pattern
+        const files = await fg(searchPattern, { onlyFiles: true }); // Use fast-glob to find files matching the pattern
         if (files.length > 0) {
           return files[0]; // Return the path of the first matching file found
         }
