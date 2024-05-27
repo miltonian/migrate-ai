@@ -2,8 +2,10 @@ import * as fs from "fs";
 import { uniq, uniqBy } from "lodash";
 import * as path from "path";
 import * as readline from "readline";
+import * as tsConfigPaths from "tsconfig-paths";
 import * as ts from "typescript";
 import { sendMessageToAssistant, sendMessageToChatGPT } from "./openai-utils";
+const stripJsonComments = import("strip-json-comments");
 
 import { exec } from "child_process";
 import { stringTokens } from "openai-chat-tokens";
@@ -437,10 +439,13 @@ const getIdentifiersAndPathFromImport = async (
     const resolvedPath = await resolveImportPath(
       fromPath,
       lastStringLiteralMatch || ""
-    ).catch((err) => {
+    ); /*.catch((err) => {
       console.error(err);
       return lastStringLiteralMatch;
-    });
+    });*/
+    // if (!resolvedPath) {
+    //   return lastStringLiteralMatch;
+    // }
     // console.log('finished resolving: ', lastStringLiteralMatch)
     if (resolvedPath) {
       if (!resolvedPath.includes("node_modules")) {
@@ -523,56 +528,142 @@ const getIdentifiersAndPathFromImport = async (
  * @returns A promise that resolves to the absolute path of the resolved module or undefined if not resolved.
  */
 async function resolveImportPath(
-  absoluteFilePath: string,
-  importStatement: string
-): Promise<string | undefined> {
+  importingFilePath: string,
+  importPath: string
+): Promise<string> {
+  let tsConfig: any;
   try {
-    const text = fs.readFileSync(absoluteFilePath, "utf-8");
-    const sourceFile = ts.createSourceFile(
-      absoluteFilePath,
-      text,
-      ts.ScriptTarget.Latest
-    );
-
-    let resolvedPath: string | undefined;
-
-    const visitNode = (node: ts.Node) => {
-      if (
-        ts.isImportDeclaration(node) &&
-        node.moduleSpecifier.getText(sourceFile).includes(importStatement)
-      ) {
-        const importPath = node.moduleSpecifier
-          .getText(sourceFile)
-          .slice(1, -1); // Remove quotes
-        const directoryPath = path.dirname(absoluteFilePath);
-        resolvedPath = require.resolve(path.join(directoryPath, importPath));
-        if (!resolvedPath) {
-          resolvedPath = require.resolve(
-            path.join(directoryPath, `${importPath}.ts`)
-          );
-        }
-        if (!resolvedPath) {
-          resolvedPath = require.resolve(
-            path.join(directoryPath, `${importPath}.js`)
-          );
-        }
-      }
-      ts.forEachChild(node, visitNode);
-    };
-
-    ts.forEachChild(sourceFile, visitNode);
-
-    if (!resolvedPath) {
-      console.error("Import statement not found in document.");
-    }
-
-    return resolvedPath;
+    const tsConfigRaw = fs.readFileSync("tsconfig.json", "utf-8");
+    // console.info(tsConfigStr);
+    tsConfig = JSON.parse((await stripJsonComments)(tsConfigRaw));
   } catch (error) {
-    console.error(`Couldn't resolve the import statement: ${importStatement}`);
-    console.error("Error resolving import path:", error);
-    return undefined;
+    // console.error(error);
+    return importPath;
   }
+
+  if (!tsConfig.compilerOptions || !tsConfig.compilerOptions.baseUrl) {
+    throw new Error("baseUrl is not set in tsconfig.json");
+  }
+
+  const baseUrl = path.resolve(tsConfig.compilerOptions.baseUrl);
+  const matchPath = tsConfigPaths.createMatchPath(
+    baseUrl,
+    tsConfig.compilerOptions.paths || {}
+  );
+
+  // console.log("Base URL:", baseUrl);
+  // console.log("Import Path:", importPath);
+  // console.log("Importing File Path:", importingFilePath);
+
+  // First, try to resolve using tsconfig paths
+  let result = matchPath(importPath);
+
+  if (result) {
+    console.log("Resolved using tsconfig paths:", result);
+    if (checkFileExistence(path.resolve(result))) {
+      return checkFileExistence(path.resolve(result))!;
+    }
+  }
+
+  // If no match is found, resolve relative to the importing file's directory
+  const importingDir = path.dirname(importingFilePath);
+  result = path.resolve(importingDir, importPath);
+
+  // Normalize the resulting path
+  const resolvedPath = path.normalize(result);
+  // console.log("Resolved relative path:", resolvedPath);
+
+  // Check if the path incorrectly repeats part of the path
+  if (resolvedPath.includes("/src/tasks/api/routes/src/")) {
+    const correctedPath = resolvedPath.replace(
+      "/src/tasks/api/routes/src/",
+      "/src/"
+    );
+    console.log("Corrected path:", correctedPath);
+    if (checkFileExistence(correctedPath)) {
+      return checkFileExistence(correctedPath)!;
+    }
+  }
+
+  return resolvedPath;
 }
+function removeCommentsAndTrailingCommas(jsonString: string): string {
+  // Remove single-line comments
+  let noComments = jsonString.replace(/\/\/.*$/gm, "");
+  // Remove multi-line comments
+  noComments = noComments.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  // Remove trailing commas
+  let noTrailingCommas = noComments.replace(/,\s*}/g, "}");
+  noTrailingCommas = noTrailingCommas.replace(/,\s*]/g, "]");
+
+  return noTrailingCommas;
+}
+
+// Function to check if a file exists with or without extensions
+function checkFileExistence(filePath: string): string | null {
+  if (fs.existsSync(filePath)) {
+    return filePath;
+  }
+  if (fs.existsSync(`${filePath}.ts`)) {
+    return `${filePath}.ts`;
+  }
+  if (fs.existsSync(`${filePath}.js`)) {
+    return `${filePath}.js`;
+  }
+  return null;
+}
+// async function resolveImportPath(
+//   absoluteFilePath: string,
+//   importStatement: string
+// ): Promise<string | undefined> {
+//   try {
+//     const text = fs.readFileSync(absoluteFilePath, "utf-8");
+//     const sourceFile = ts.createSourceFile(
+//       absoluteFilePath,
+//       text,
+//       ts.ScriptTarget.Latest
+//     );
+
+//     let resolvedPath: string | undefined;
+
+//     const visitNode = (node: ts.Node) => {
+//       if (
+//         ts.isImportDeclaration(node) &&
+//         node.moduleSpecifier.getText(sourceFile).includes(importStatement)
+//       ) {
+//         const importPath = node.moduleSpecifier
+//           .getText(sourceFile)
+//           .slice(1, -1); // Remove quotes
+//         const directoryPath = path.dirname(absoluteFilePath);
+//         resolvedPath = require.resolve(path.join(directoryPath, importPath));
+//         if (!resolvedPath) {
+//           resolvedPath = require.resolve(
+//             path.join(directoryPath, `${importPath}.ts`)
+//           );
+//         }
+//         if (!resolvedPath) {
+//           resolvedPath = require.resolve(
+//             path.join(directoryPath, `${importPath}.js`)
+//           );
+//         }
+//       }
+//       ts.forEachChild(node, visitNode);
+//     };
+
+//     ts.forEachChild(sourceFile, visitNode);
+
+//     if (!resolvedPath) {
+//       console.error("Import statement not found in document.");
+//     }
+
+//     return resolvedPath;
+//   } catch (error) {
+//     console.error(`Couldn't resolve the import statement: ${importStatement}`);
+//     console.error("Error resolving import path:", error);
+//     return undefined;
+//   }
+// }
 
 export const minimizeCodeByLines = (code: string): string => {
   return code
