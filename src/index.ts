@@ -23,8 +23,8 @@ import {
   writeTestsInExistingFile,
   writeTestsToNewFile,
 } from "./utils";
-// const Inquirer = import("inquirer");
-import inquirer from "inquirer";
+const Inquirer = import("inquirer");
+// import inquirer from "inquirer";
 
 // Declare a variable for the LanguageClient instance
 // let client: LanguageClient;
@@ -169,7 +169,9 @@ async function ensureApiKey(): Promise<string | undefined> {
 
   if (!openaiApiKey) {
     // const inquirer = await import("inquirer");
-    const response = await inquirer.prompt([
+    const response = await (
+      await Inquirer
+    ).prompt([
       {
         type: "input",
         name: "openaiApiKey",
@@ -203,7 +205,9 @@ async function ensureGithubToken(): Promise<string | undefined> {
   let githubToken = config.githubToken;
 
   if (!githubToken) {
-    const response = await inquirer.prompt([
+    const response = await (
+      await Inquirer
+    ).prompt([
       {
         type: "input",
         name: "githubToken",
@@ -269,7 +273,9 @@ async function ensureRepo(): Promise<string | undefined> {
   let repo = config.repo;
 
   if (!repo) {
-    const response = await inquirer.prompt([
+    const response = await (
+      await Inquirer
+    ).prompt([
       {
         type: "input",
         name: "repo",

@@ -1,6 +1,6 @@
 {
   "name": "@celp/celp-cli",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "main": "dist/index.js",
   "license": "MIT",
   "scripts": {
@@ -14,7 +14,7 @@
     "cli-progress": "^3.12.0",
     "commander": "^12.1.0",
     "fast-glob": "^3.3.2",
-    "inquirer": "^9.2.22",
+    "inquirer": "^8.2.6",
     "lodash": "^4.17.21",
     "openai": "^4.47.1",
     "openai-chat-tokens": "^0.2.8",
@@ -22,8 +22,8 @@
     "uuid": "^9.0.1"
   },
   "devDependencies": {
+    "@types/inquirer": "^7.3.3",
     "@types/cli-progress": "^3.11.5",
-    "@types/inquirer": "^9.0.7",
     "@types/lodash": "^4.17.4",
     "@types/uuid": "^9.0.8"
   },
@@ -32,6 +32,5 @@
   ],
   "bin": {
     "celp-cli": "./dist/index.js"
-  },
-  "type": "module"
+  }
 }
