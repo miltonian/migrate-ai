@@ -1,7 +1,7 @@
-import fs from "fs";
+import * as fs from "fs";
 import { uniq, uniqBy } from "lodash";
 import * as path from "path";
-import readline from "readline";
+import * as readline from "readline";
 import * as ts from "typescript";
 import { sendMessageToAssistant, sendMessageToChatGPT } from "./openai-utils";
 

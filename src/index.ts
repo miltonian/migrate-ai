@@ -2,11 +2,11 @@
 
 import { TSESTree } from "@typescript-eslint/types";
 import { parse } from "@typescript-eslint/typescript-estree";
-import cliProgress from "cli-progress";
+import * as cliProgress from "cli-progress";
 import { Command } from "commander";
-import fs from "fs";
-import glob from "glob-promise";
-import path from "path";
+import * as fs from "fs";
+import * as glob from "glob-promise";
+import * as path from "path";
 import { v4 } from "uuid";
 import {
   createAndStoreAssistant,
@@ -95,7 +95,7 @@ export function activate() {
 
   program
     .command("writeTests")
-    .description("Generate tests from selection")
+    .description("Generate tests from git diff")
     .action(() => {
       highlightAndOpenChangedFiles();
     });

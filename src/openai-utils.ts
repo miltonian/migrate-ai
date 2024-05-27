@@ -1,7 +1,7 @@
-import fs from "fs";
+import * as fs from "fs";
 import OpenAI from "openai";
 
-import path from "path";
+import * as path from "path";
 import { selectedCodeWithoutReferences } from "./index";
 import { TOKEN_MAX_LENGTH, delay, minimizeCode } from "./utils";
 

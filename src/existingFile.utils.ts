@@ -1,5 +1,5 @@
 import * as fs from "fs";
-import readline from "readline";
+import * as readline from "readline";
 import {
   currentGitDiff,
   fromHighlightedCode,
