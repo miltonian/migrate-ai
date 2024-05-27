@@ -1,3 +1,5 @@
+#! /usr/bin/env node
+
 import { TSESTree } from "@typescript-eslint/types";
 import { parse } from "@typescript-eslint/typescript-estree";
 import cliProgress from "cli-progress";

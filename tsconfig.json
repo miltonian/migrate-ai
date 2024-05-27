@@ -5,7 +5,7 @@
 		"lib": [
 			"ES2022"
 		],
-		"outDir": "./out",
+		"outDir": "./dist",
 		"sourceMap": true,
 		"rootDir": "./src",
         "skipLibCheck": true, // Add this line

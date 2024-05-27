@@ -1,4 +1,15 @@
-node_modules
+
 .vscode
 yarn-error.log
 .npmrc
+out
+dist
+# Dependency directories
+node_modules
+jspm_packages
+
+# Snowpack dependency directory (https://snowpack.dev/)
+web_modules
+
+# TypeScript cache
+*.tsbuildinfo\

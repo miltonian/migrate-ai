@@ -27,7 +27,7 @@
     "dist/**/*"
   ],
   "bin": {
-    "celp-cli": "dist/index.js"
+    "celp-cli": "./dist/index.js"
   },
   "publishConfig": {
     "access": "restricted",
