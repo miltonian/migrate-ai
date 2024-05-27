@@ -6,14 +6,32 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: checkout
+      - name: Checkout repository
         uses: actions/checkout@v2
-      - name: node
+
+      - name: Set up Node.js
         uses: actions/setup-node@v2
         with:
-          node-version: 16
-          registry-url: https://registry.npmjs.org
-      - name: publish
+          node-version: 20
+          cache: "yarn"
+
+      - name: Cache dependencies
+        uses: actions/cache@v2
+        with:
+          path: |
+            node_modules
+            .yarn/cache
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build project
+        run: yarn build
+
+      - name: Publish to npm
         run: npm publish --access public
         env:
-          NODE_AUTH_TOKEN: ${{secrets.NPM_AUTH_TOKEN}}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
