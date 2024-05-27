@@ -428,7 +428,7 @@ async function handleNewTestFile(
   if (!newTestFileName) {
     throw new Error("Could not generate new test file name");
   }
-  console.log({ newTestFileName });
+  //   console.log({ newTestFileName });
   await writeTestsToNewFile(filePath, autoContextTestFile, newTestFileName);
 }
 
@@ -558,14 +558,14 @@ async function highlightAndOpenChangedFiles(
       selectedCodeWithoutReferences =
         snippets?.codeWithoutReferences.join("") || "";
       currentGitDiff = snippets?.gitDiff || "";
-      console.log({
-        snippets,
-        currentGitDiff,
-        selectedCodeWithoutReferences,
-        selectedCodeWithoutReferencesstring: JSON.stringify(
-          selectedCodeWithoutReferences
-        ),
-      });
+      //   console.log({
+      //     snippets,
+      //     currentGitDiff,
+      //     selectedCodeWithoutReferences,
+      //     selectedCodeWithoutReferencesstring: JSON.stringify(
+      //       selectedCodeWithoutReferences
+      //     ),
+      //   });
       if (!selectedCode) {
         //   console.info(
         //     `Code has not changed in ${file}, skipping...`
@@ -903,7 +903,7 @@ async function collectAndDisplaySnippets(
 
     const changedLines = parseDiff(diff);
     const enclosingNodes = findEnclosingNodes(ast, changedLines, document);
-    console.log({ diff, changedLines, enclosingNodes });
+    // console.log({ diff, changedLines, enclosingNodes });
 
     const snippets: string[] = enclosingNodes
       .map((node) => {

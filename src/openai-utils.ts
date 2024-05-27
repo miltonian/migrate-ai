@@ -99,7 +99,7 @@ export const saveThreadIdToFile = async (threadId: string) => {
       THREAD_FILE_PATH,
       new TextEncoder().encode(threadId)
     );
-    console.log("File has been saved.");
+    // console.log("File has been saved.");
   } catch (err) {
     console.error("Error writing file:", err);
   }
@@ -123,7 +123,7 @@ export const saveThreadIdToFile = async (threadId: string) => {
 export const deleteThreadIdFile = async () => {
   try {
     await fs.promises.unlink(THREAD_FILE_PATH);
-    console.log("File has been deleted.");
+    // console.log("File has been deleted.");
   } catch (err) {
     console.error("Error deleting file:", err);
   }
@@ -192,9 +192,9 @@ export const getAssistantIdFromFile = async (
     if (assistant) {
       return assistant.assistantId;
     }
-    console.log(
-      "No matching assistant found for the provided identifiable code."
-    );
+    // console.log(
+    //   "No matching assistant found for the provided identifiable code."
+    // );
     return null;
   } catch (err) {
     console.error("Error reading file:", err);
@@ -302,7 +302,7 @@ export const saveAssistantIdToFile = async (
 export const deleteAssistantIdFile = async () => {
   try {
     await fs.promises.unlink(ASSISTANT_FILE_PATH);
-    console.log("File has been deleted.");
+    // console.log("File has been deleted.");
   } catch (err) {
     console.error("Error deleting file:", err);
   }
@@ -390,7 +390,7 @@ export const createAndStoreAssistant = async (
 export const getSystemMessageContent = (
   messagesPage: OpenAI.Beta.Threads.Messages.MessagesPage
 ) => {
-  console.log({ messagesPage });
+  // console.log({ messagesPage });
   const assistantMessageWithTimestamps = messagesPage.data
     .filter((d) => d.role === "assistant" && d.content[0].type === "text")
     .map((d) => {

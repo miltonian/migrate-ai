@@ -150,13 +150,13 @@ export async function parseCodeForASTs(
   function processNode(node: ts.Node) {
     const text = node.getText(sourceFile);
     if (debug) {
-      console.log({
-        code: text,
-        minimizedCode: minimizeCode(text),
-        searchValue,
-        // searchRegex,
-        filePath,
-      });
+      // console.log({
+      //   code: text,
+      //   minimizedCode: minimizeCode(text),
+      //   searchValue,
+      //   // searchRegex,
+      //   filePath,
+      // });
     }
     if (
       !searchValue ||
@@ -568,6 +568,7 @@ async function resolveImportPath(
 
     return resolvedPath;
   } catch (error) {
+    console.error(`Couldn't resolve the import statement: ${importStatement}`);
     console.error("Error resolving import path:", error);
     return undefined;
   }
@@ -712,7 +713,7 @@ export const writeTestsToNewFile = async (
       "Something went wrong with getting code from test file used for context"
     );
   }
-
+  progressBar.update(50);
   // add other test file to context
   await sendMessageToAssistant(
     `also use this test code for context. await my further instructions ${
@@ -727,6 +728,7 @@ export const writeTestsToNewFile = async (
   );
 
   if (codeToAdd) {
+    progressBar.update(80);
     await insertTextToFile(newTestFilePath, 0, codeToAdd); // Insert at the beginning of the new file
     codeToAdd = await addOrUpdateAnyMissingTestsAndOverwriteFile(
       newTestFilePath,
@@ -1084,7 +1086,7 @@ export const writeTestsInExistingFile = async (
     testFile,
     "existing"
   );
-  console.log({ resp });
+  // console.log({ resp });
   if (!resp) {
     return;
   }
@@ -1103,7 +1105,7 @@ export const writeTestsInExistingFile = async (
       workspaceRoot
     )
   );*/
-  progressBar.update(35);
+  progressBar.update(50);
 
   const minimizedByLineCodeToAdd = await generateCodeToInsertIntoExistingFile(
     testFile,
@@ -1115,14 +1117,14 @@ export const writeTestsInExistingFile = async (
   if (!codeToAdd) {
     throw new Error("no code to add");
   }
-  console.log({ codeToAdd });
+  // console.log({ codeToAdd });
   const originalCode = testFile && ts.sys.readFile(testFile);
   if (!originalCode || !testFile) {
     console.error(`Failed to read file: ${testFile}`);
     return null;
   }
 
-  progressBar.update(10);
+  progressBar.update(80);
   replaceAllCodeInFile(testFile, codeToAdd);
 
   delay(2000);
@@ -1134,7 +1136,7 @@ export const writeTestsInExistingFile = async (
     return null;
   }
 
-  progressBar.update(10);
+  progressBar.update(90);
 
   console.info("Tests inserted successfully into existing file.");
 };
@@ -1157,7 +1159,7 @@ const getOutlineOfTestFile = async (testFile: string) => {
 
   //   return it as json format {"testBlock": string}[] where "testBlock" the exact code snippet (entire line of code) i can take a search for to find the line number in the file. your response should ONLY contain json. nothing else. `
   // );
-  console.log({ outlineStr });
+  // console.log({ outlineStr });
   let outlineJSON: { testBlock: string }[] | null = null;
   try {
     outlineJSON = JSON.parse(
@@ -1166,7 +1168,7 @@ const getOutlineOfTestFile = async (testFile: string) => {
   } catch (error) {
     console.error(error);
   }
-  console.log({ outlineJSON });
+  // console.log({ outlineJSON });
   return outlineJSON?.map(({ testBlock }) => ({
     testBlock,
     lineNumber: findLineNumber(testFile, testBlock),
@@ -1230,7 +1232,7 @@ export async function findTestBlockEndLine(
   let astsArray = uniqBy(asts, "ast").filter(({ ast, astObj }) => {
     return !ast.startsWith("SourceFile") && !ast.startsWith("Import");
   });
-  console.log({ startString, asts, astsArray });
+  // console.log({ startString, asts, astsArray });
   astsArray = astsArray.length
     ? [
         astsArray.find((ast) => {
@@ -1242,10 +1244,10 @@ export async function findTestBlockEndLine(
     return null;
   }
   const ast = astsArray[0];
-  console.log({
-    foundtestblockast: ast,
-    foundlinenumber: getLineNumberFromPosition(filePath, ast.astObj.end),
-  });
+  // console.log({
+  //   foundtestblockast: ast,
+  //   foundlinenumber: getLineNumberFromPosition(filePath, ast.astObj.end),
+  // });
   return getLineNumberFromPosition(filePath, ast.astObj.end);
 }
 
@@ -1262,7 +1264,7 @@ const getMinimizedTestCodeWithRefToModifyOrContext = async (
 
   const gitDiff = currentGitDiff;
   const outline = await getOutlineOfTestFile(testFile);
-  console.log({ outline, gitDiff });
+  // console.log({ outline, gitDiff });
   let prompt = "";
 
   switch (typeOfTestFile) {
@@ -1314,7 +1316,7 @@ const getMinimizedTestCodeWithRefToModifyOrContext = async (
       // jsonPositionToModifyStr?.message
       jsonPositionToModifyStr?.replace("```json", "")?.replace("```", "") || ""
     );
-    console.log({ jsonPositionToModify });
+    // console.log({ jsonPositionToModify });
     if (jsonPositionToModify) {
       jsonPositionToModify.lineNumber =
         (await findTestBlockEndLine(
@@ -1330,7 +1332,7 @@ const getMinimizedTestCodeWithRefToModifyOrContext = async (
     console.error(error);
   }
 
-  console.log({ startEndStringJSON: jsonPositionToModify });
+  // console.log({ startEndStringJSON: jsonPositionToModify });
   const codeBlockToModifyResp =
     (jsonPositionToModify &&
       (await findCodeBlock(testFile, {
@@ -1377,10 +1379,10 @@ async function generateInsertionCode(
 ): Promise<string> {
   const ignoreDiff = fromHighlightedCode;
 
-  console.log({ currentGitDiff });
+  // console.log({ currentGitDiff });
   const gitDiff = currentGitDiff;
 
-  console.log({ fromHighlightedCode, selectedCodeWithoutReferences, gitDiff });
+  // console.log({ fromHighlightedCode, selectedCodeWithoutReferences, gitDiff });
 
   let planningPrompt = "";
   let prompt = "";
@@ -1441,10 +1443,10 @@ async function generateInsertionCode(
       throw new Error("something went wrong");
       break;
   }
-  console.log("planningPrompt");
-  console.log(planningPrompt);
+  // console.log("planningPrompt");
+  // console.log(planningPrompt);
   const plan = await sendMessageToAssistant(planningPrompt, "gpt-4o");
-  console.log({ planningPrompt, plan, selectedCodeWithoutReferences });
+  // console.log({ planningPrompt, plan, selectedCodeWithoutReferences });
 
   const codeToAddJSONStr = await sendMessageToAssistant(
     prompt,

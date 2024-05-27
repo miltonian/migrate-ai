@@ -44,7 +44,7 @@ export const getRelevantStartStringToReplace = async (
     throw new Error(error);
   }
 
-  console.log({ startEndStringJSON: jsonPositionToModify });
+  //   console.log({ startEndStringJSON: jsonPositionToModify });
 
   return {
     startString: convertCodeStringBackToCode(
@@ -101,7 +101,7 @@ export async function generateCodeToInsertIntoExistingFile(
       Try to use existing routes or other related existing code as much as you can rather than making things up that don't exist. Your response should only contain the code to add. your response is text, not json. only return the code i can paste in my file. nothing else
       `
   );
-  console.log({ codeToAddJSONStr });
+  //   console.log({ codeToAddJSONStr });
 
   const newCode =
     codeToAddJSONStr?.message
@@ -109,7 +109,7 @@ export async function generateCodeToInsertIntoExistingFile(
       .replace("```javascript", "")
       .replace("```", "") || "";
 
-  console.log({ newCode });
+  //   console.log({ newCode });
   const fullFileCode = await getModifiedFileContent(
     testFile,
     lineNumberToAddCode,
@@ -118,7 +118,7 @@ export async function generateCodeToInsertIntoExistingFile(
   // const fullFileCodeMinimized = minimizeCodeByLines(
   //   unminimizedTestFileCode
   // ).replace(scopeToPlaceCode, newCode);
-  console.log({ fullFileCode });
+  //   console.log({ fullFileCode });
   return fullFileCode;
 }
 
@@ -153,18 +153,18 @@ export async function insertCodeIntoExistingCode(
       Try to use existing routes or other related existing code as much as you can rather than making things up that don't exist. Your response should only contain the code to add. your response is text, not json. only return the code i can paste in my file. nothing else
     `
   );
-  console.log({ codeToAddJSONStr });
+  //   console.log({ codeToAddJSONStr });
 
   const newCode =
     codeToAddJSONStr?.message
       .replace("```typescript", "")
       .replace("```javascript", "")
       .replace("```", "") || "";
-  console.log({ newCode });
+  //   console.log({ newCode });
   const fullFileCodeMinimized = minimizeCodeByLines(
     unminimizedTestFileCode
   ).replace(scopeToPlaceCode, newCode);
-  console.log({ fullFileCodeMinimized });
+  //   console.log({ fullFileCodeMinimized });
   return convertCodeStringBackToCode(fullFileCodeMinimized);
 }
 
@@ -317,7 +317,7 @@ export const replaceAllCodeInFile = (
   filePath: string,
   newCode: string
 ): void => {
-  console.log({ filePath });
+  //   console.log({ filePath });
   try {
     // Ensure the file exists before attempting to read it
     if (!fs.existsSync(filePath)) {
