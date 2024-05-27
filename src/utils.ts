@@ -602,6 +602,9 @@ function removeCommentsAndTrailingCommas(jsonString: string): string {
 
 // Function to check if a file exists with or without extensions
 function checkFileExistence(filePath: string): string | null {
+  if (["node_modules", "dist", "out"].includes(filePath)) {
+    return null;
+  }
   if (fs.existsSync(filePath)) {
     return filePath;
   }
