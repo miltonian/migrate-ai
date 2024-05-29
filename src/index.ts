@@ -499,6 +499,19 @@ async function highlightAndOpenChangedFiles(
     return;
   }
 
+  const celpCacheDir = path.join(workspaceFolder, ".celp-ai/.cache");
+  const threadIdFile = path.join(celpCacheDir, "thread_id");
+
+  // Ensure the .celp-ai/.cache directory exists
+  if (!fs.existsSync(celpCacheDir)) {
+    fs.mkdirSync(celpCacheDir, { recursive: true });
+  }
+
+  // Create the thread_id file if it doesn't exist
+  if (!fs.existsSync(threadIdFile)) {
+    fs.writeFileSync(threadIdFile, "");
+  }
+
   progressBar = new cliProgress.SingleBar({
     // format: 'CLI Progress |' + colors.cyan('{bar}') + '| {percentage}% || {value}/{total} Chunks || Speed: {speed}',
     barCompleteChar: "\u2588",

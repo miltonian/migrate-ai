@@ -559,7 +559,7 @@ async function resolveImportPath(
   let result = matchPath(importPath);
 
   if (result) {
-    console.log("Resolved using tsconfig paths:", result);
+    // console.log("Resolved using tsconfig paths:", result);
     if (checkFileExistence(path.resolve(result))) {
       return checkFileExistence(path.resolve(result))!;
     }
@@ -579,7 +579,7 @@ async function resolveImportPath(
       "/src/tasks/api/routes/src/",
       "/src/"
     );
-    console.log("Corrected path:", correctedPath);
+    console.log("Using path for context:", correctedPath);
     if (checkFileExistence(correctedPath)) {
       return checkFileExistence(correctedPath)!;
     }
