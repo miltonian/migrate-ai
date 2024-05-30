@@ -25,6 +25,9 @@ let allCode: string = "";
 let usedAsts: string[] = [];
 let reachedLimit: boolean = false;
 
+export const MAX_TOTAL_TOKENS = 65000; // about $1 for gpt-4o
+export let currentTotalTokens: number = 0;
+
 export const delay = async (ms: number): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve, ms));
 };
@@ -773,8 +776,18 @@ export const addCode = (
       allCode += newCode;
       return newCode;
   }
+  currentTotalTokens += stringTokens(newCode);
   allCode += newCode;
+  if (currentTotalTokens > MAX_TOTAL_TOKENS) {
+    throw new Error(
+      "Cannot complete test generation, maximum context has been applied"
+    );
+  }
   return newCode;
+};
+
+export const resetTokenCount = () => {
+  currentTotalTokens = 0;
 };
 
 interface SearchParameters {

@@ -20,6 +20,7 @@ import {
   addToGitignore,
   executeGitCommand,
   extractCodeAndReferences,
+  resetTokenCount,
   writeTestsInExistingFile,
   writeTestsToNewFile,
 } from "./utils";
@@ -33,6 +34,7 @@ export let selectedCodeWithoutReferences: string = "";
 export let currentGitDiff: string = "";
 export let fromHighlightedCode = false;
 export let progressBar: cliProgress.SingleBar;
+
 // export let editorSelection: vscode.Selection | null = null;
 // export let textEditor: vscode.TextEditor | undefined;
 
@@ -108,6 +110,7 @@ export function activate() {
  * @param context - The extension context.
  */
 async function setupEnvironment() {
+  resetTokenCount();
   await addToGitignore(".celp-ai");
   await deleteThreadIdFile();
   // await deleteAssistantIdFile();

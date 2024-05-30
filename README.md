@@ -7,7 +7,7 @@
 To install `celp-cli`, run the following command:
 
 ```sh
-curl -s https://raw.githubusercontent.com/miltonian/celp-cli/main/install.sh | bash
+npm install -g @celp/celp-cli
 ```
 
 This script will download the latest version of celp-cli and install it to /usr/local/bin.
