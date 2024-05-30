@@ -130,6 +130,8 @@ const addSelectedCodeWithRefToAIContext = async (
     return;
   }
 
+  console.info(`adding code from ${filePath} to context`);
+
   await sendMessageToAssistant(
     `use this for context. await my further instructions ${codeWithReferences}`
   );
