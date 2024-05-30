@@ -119,7 +119,7 @@ export async function parseCodeForASTs(
 ): Promise<{ ast: string; code: string; path: string; astObj: ts.Node }[]> {
   let fileContents = filePath && ts.sys.readFile(filePath);
   if (!fileContents || !filePath) {
-    console.error(`Failed to read file: ${filePath}`);
+    // console.error(`Failed to read file: ${filePath}`);
     return [];
   }
 
@@ -1235,7 +1235,7 @@ export const writeTestsInExistingFile = async (
   // console.log({ codeToAdd });
   const originalCode = testFile && ts.sys.readFile(testFile);
   if (!originalCode || !testFile) {
-    console.error(`Failed to read file: ${testFile}`);
+    // console.error(`Failed to read file: ${testFile}`);
     return null;
   }
 
@@ -1247,7 +1247,7 @@ export const writeTestsInExistingFile = async (
 
   const newCode = testFile && ts.sys.readFile(testFile);
   if (!newCode || !testFile) {
-    console.error(`Failed to read file: ${testFile}`);
+    // console.error(`Failed to read file: ${testFile}`);
     return null;
   }
 
@@ -1373,7 +1373,7 @@ const getMinimizedTestCodeWithRefToModifyOrContext = async (
   const ignoreDiff = fromHighlightedCode;
   const testFileContentsNotMinified = testFile && ts.sys.readFile(testFile);
   if (!testFileContentsNotMinified || !testFile) {
-    console.error(`Failed to read file: ${testFile}`);
+    // console.error(`Failed to read file: ${testFile}`);
     return null;
   }
 
