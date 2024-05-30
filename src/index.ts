@@ -495,6 +495,7 @@ async function highlightAndOpenChangedFiles(
   args?: GithubRepoPreConfig,
   promptEverything?: boolean
 ) {
+  resetTokenCount();
   //   const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
   const workspaceFolder = process.cwd();
 
