@@ -562,12 +562,35 @@ async function highlightAndOpenChangedFiles(
     progressBar.update(10);
 
     const changedFiles = (await getChangedFiles(workspaceFolder)).filter(
-      (f) => f.endsWith(".ts") && !f.includes(".test.") && !f.includes(".spec.")
+      (f) => {
+        const isValidFile =
+          f.endsWith(".ts") &&
+          !f.endsWith(".d.ts") &&
+          !f.includes(".test.") &&
+          !f.includes(".spec.") &&
+          !f.includes("jest.config.ts") &&
+          !f.includes("tsconfig.json") &&
+          !f.includes("webpack.config.js") &&
+          !f.includes("babel.config.js") &&
+          !f.includes("eslint") &&
+          !f.includes("prettier") &&
+          !f.includes(".env") &&
+          !f.includes("README.md") &&
+          !f.includes("CHANGELOG.md") &&
+          !f.includes("package.json") &&
+          !f.includes("package-lock.json") &&
+          !f.includes("yarn.lock") &&
+          !f.includes("build/") &&
+          !f.includes("dist/") &&
+          !f.includes("out/");
+        return isValidFile;
+      }
     );
     let allSnippets: string[] = [];
 
     let i = 0;
     for (const file of changedFiles) {
+      console.info(`starting to generate tests for ${file}...`);
       progressBar.update(15);
       const snippets = await collectAndDisplaySnippets(file, workspaceFolder);
 
@@ -583,6 +606,7 @@ async function highlightAndOpenChangedFiles(
       //       selectedCodeWithoutReferences
       //     ),
       //   });
+
       if (!selectedCode) {
         //   console.info(
         //     `Code has not changed in ${file}, skipping...`

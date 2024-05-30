@@ -8,6 +8,7 @@ import { sendMessageToAssistant, sendMessageToChatGPT } from "./openai-utils";
 const stripJsonComments = import("strip-json-comments");
 
 import { exec } from "child_process";
+import ignore from "ignore";
 import { stringTokens } from "openai-chat-tokens";
 import {
   generateCodeToInsertIntoExistingFile,
@@ -383,9 +384,9 @@ const extractCodeFromASTsInPath = async (
   }
   if (onLayer === 1) {
     if (reachedLimit) {
-      console.info(
-        "Truncating code to copy since it hit the token limit for this model. Try selecting a smaller subset of the code"
-      );
+      // console.info(
+      //   "Truncating code to copy since it hit the token limit for this model. Try selecting a smaller subset of the code"
+      // );
     }
   }
 
@@ -600,8 +601,22 @@ function removeCommentsAndTrailingCommas(jsonString: string): string {
   return noTrailingCommas;
 }
 
+// Load and parse the .gitignore file
+const gitignorePath = path.join(process.cwd(), ".gitignore");
+let ig = ignore();
+
+if (fs.existsSync(gitignorePath)) {
+  const gitignoreContent = fs.readFileSync(gitignorePath, "utf-8");
+  ig = ig.add(gitignoreContent);
+}
+
 // Function to check if a file exists with or without extensions
 function checkFileExistence(filePath: string): string | null {
+  // Check if the file or directory is ignored by .gitignore
+  if (ig.ignores(filePath)) {
+    return null;
+  }
+
   if (filePath.includes("node_modules")) {
     return null;
   }
