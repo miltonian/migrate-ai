@@ -1,10 +1,11 @@
 {
   "name": "@celp/celp-cli",
-  "version": "1.0.23",
+  "version": "1.0.24",
   "main": "dist/index.js",
   "license": "MIT",
   "scripts": {
     "build": "tsc",
+    "postbuild": "cp package.json dist/",
     "start": "node dist/index.js"
   },
   "repository": "https://github.com/miltonian/celp-cli",

@@ -95,6 +95,14 @@ export function activate() {
   //   );
   const program = new Command();
 
+  // Retrieve version from package.json
+  const packageJsonPath = path.resolve(__dirname, "package.json");
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+  const version = packageJson.version;
+
+  // Add version option
+  program.version(version, "-v, --version", "Output the current version");
+
   program
     .command("writeTests")
     .description("Generate tests from git diff")
