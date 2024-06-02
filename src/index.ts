@@ -34,7 +34,7 @@ export let selectedCodeWithoutReferences: string = "";
 export let currentGitDiff: string = "";
 export let fromHighlightedCode = false;
 export let progressBar: cliProgress.SingleBar;
-
+export let mainBranch: "main" | "master" = "main";
 // export let editorSelection: vscode.Selection | null = null;
 // export let textEditor: vscode.TextEditor | undefined;
 
@@ -441,6 +441,13 @@ async function handleNewTestFile(
   await writeTestsToNewFile(filePath, autoContextTestFile, newTestFileName);
 }
 
+/**
+ * Recursively finds the smallest enclosing AST node that contains the given position.
+ *
+ * @param {TSESTree.Node} node - The current AST node being checked.
+ * @param {number} position - The position within the document to find the enclosing node for.
+ * @returns {TSESTree.Node | null} The smallest enclosing node that contains the position, or null if not found.
+ */
 function findEnclosingNode(
   node: TSESTree.Node,
   position: number
@@ -453,6 +460,11 @@ function findEnclosingNode(
   // Recursive case: traverse child nodes based on node type
   let result: TSESTree.Node | null = null;
 
+  /**
+   * Helper function to check the children of the current node.
+   *
+   * @param {TSESTree.Node[]} children - The child nodes to check.
+   */
   const checkChildren = (children: TSESTree.Node[]) => {
     for (const child of children) {
       const childResult = findEnclosingNode(child, position);
@@ -464,23 +476,91 @@ function findEnclosingNode(
   };
 
   switch (node.type) {
+    /**
+     * Program node: The root of the AST. Contains all other nodes.
+     * @example
+     * const code = `function foo() {}`;
+     * const ast = parse(code);
+     * console.log(ast.type); // "Program"
+     */
     case "Program":
+      checkChildren(node.body);
+      break;
+    /**
+     * BlockStatement node: A block of statements enclosed by curly braces.
+     * @example
+     * const code = `{ let x = 10; }`;
+     * const ast = parse(code);
+     * console.log(ast.body[0].type); // "BlockStatement"
+     */
     case "BlockStatement":
       checkChildren(node.body);
       break;
+    /**
+     * FunctionDeclaration node: A function declaration statement.
+     * @example
+     * const code = `function foo() {}`;
+     * const ast = parse(code);
+     * console.log(ast.body[0].type); // "FunctionDeclaration"
+     */
     case "FunctionDeclaration":
+    /**
+     * FunctionExpression node: A function expression.
+     * @example
+     * const code = `const foo = function() {};`;
+     * const ast = parse(code);
+     * console.log(ast.body[0].declarations[0].init.type); // "FunctionExpression"
+     */
     case "FunctionExpression":
+    /**
+     * ArrowFunctionExpression node: An arrow function expression.
+     * @example
+     * const code = `const foo = () => {};`;
+     * const ast = parse(code);
+     * console.log(ast.body[0].declarations[0].init.type); // "ArrowFunctionExpression"
+     */
     case "ArrowFunctionExpression":
       if (node.body.type === "BlockStatement") {
         checkChildren(node.body.body);
       }
       break;
+    /**
+     * IfStatement node: An if statement.
+     * @example
+     * const code = `if (true) {}`;
+     * const ast = parse(code);
+     * console.log(ast.body[0].type); // "IfStatement"
+     */
     case "IfStatement":
       if (node.consequent) {
         checkChildren([node.consequent]);
       }
       if (node.alternate) {
         checkChildren([node.alternate]);
+      }
+      break;
+    /**
+     * ExportNamedDeclaration node: An export named declaration.
+     * @example
+     * const code = `export function foo() {}`;
+     * const ast = parse(code);
+     * console.log(ast.body[0].type); // "ExportNamedDeclaration"
+     */
+    case "ExportNamedDeclaration":
+      if (node.declaration) {
+        checkChildren([node.declaration]);
+      }
+      break;
+    /**
+     * ClassDeclaration node: A class declaration.
+     * @example
+     * const code = `class MyClass { constructor() {} }`;
+     * const ast = parse(code);
+     * console.log(ast.body[0].type); // "ClassDeclaration"
+     */
+    case "ClassDeclaration":
+      if (node.body.type === "ClassBody") {
+        checkChildren(node.body.body);
       }
       break;
     // Add other cases as needed based on the types of nodes you expect to handle
@@ -593,10 +673,11 @@ async function highlightAndOpenChangedFiles(
       }
     );
     let allSnippets: string[] = [];
-
+    console.log(`changed files: ${changedFiles}`);
     let i = 0;
     for (const file of changedFiles) {
-      console.info(`starting to generate tests for ${file}...`);
+      console.log(`---`);
+      console.log(`Starting to generate tests for ${file}`);
       progressBar.update(15);
       const snippets = await collectAndDisplaySnippets(file, workspaceFolder);
 
@@ -626,6 +707,7 @@ async function highlightAndOpenChangedFiles(
         selectedCodeWithoutReferences
       );
       let isExistingAssistant = false;
+
       if (!existingAssistantForThisCode) {
         await createAndStoreAssistant(
           `celp-${v4()}`,
@@ -649,6 +731,7 @@ async function highlightAndOpenChangedFiles(
 
       progressBar.update(25);
       const foundTestFile = await findTestFilePath(file);
+
       if (foundTestFile) {
         progressBar.update(30);
         // await openFilesInEditor([foundTestFile]);
@@ -782,13 +865,21 @@ async function getChangedFiles(
   workingDirectory: string,
   overrideDiff?: string
 ): Promise<string[]> {
-  await executeGitCommand("git fetch origin main", workingDirectory); // Ensure we're comparing against the latest main
+  try {
+    await executeGitCommand("git fetch origin main", workingDirectory); // Try to fetch the main branch
+  } catch (error) {
+    console.warn("Fetching main branch failed, trying master branch.");
+    mainBranch = "master";
+    await executeGitCommand("git fetch origin master", workingDirectory); // Fallback to fetching the master branch
+  }
+
   const output =
     overrideDiff ||
     (await executeGitCommand(
-      "git diff --name-only FETCH_HEAD",
+      `git diff --name-only FETCH_HEAD`,
       workingDirectory
     ));
+
   return output.split("\n").filter((line) => line.length > 0);
 }
 
@@ -950,7 +1041,7 @@ async function collectAndDisplaySnippets(
 
     const changedLines = parseDiff(diff);
     const enclosingNodes = findEnclosingNodes(ast, changedLines, document);
-    // console.log({ diff, changedLines, enclosingNodes });
+    // console.info({ enclosingNodes: enclosingNodes.map((e) => e.type) });
 
     const snippets: string[] = enclosingNodes
       .map((node) => {

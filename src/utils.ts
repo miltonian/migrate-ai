@@ -827,11 +827,6 @@ export const writeTestsToNewFile = async (
   contextTestFile: string,
   autoNewFileName: string
 ): Promise<void> => {
-  const newTestFilePath = await createNewTestFile(filePath, autoNewFileName);
-  if (!newTestFilePath) {
-    console.info("Failed to create new test file.");
-    return;
-  }
   // await openFilesInEditor([newTestFilePath]);
 
   const modifiedTestCodeForContext =
@@ -852,20 +847,30 @@ export const writeTestsToNewFile = async (
   let codeToAdd = await generateInsertionCode(
     "", // not needed for new test file generation
     "new",
-    newTestFilePath
+    autoNewFileName
   );
 
   if (codeToAdd) {
     progressBar.update(80);
-    await insertTextToFile(newTestFilePath, 0, codeToAdd); // Insert at the beginning of the new file
-    codeToAdd = await addOrUpdateAnyMissingTestsAndOverwriteFile(
+    const newTestFilePath = await createNewTestFile(filePath, autoNewFileName);
+    if (!newTestFilePath) {
+      console.info("Failed to create new test file.");
+      return;
+    }
+    console.log(`inserting code to ${newTestFilePath}`, {
       newTestFilePath,
-      codeToAdd
-    );
-    // codeToAdd = await fixErrorsInCodeAndOverwriteFile(
+      codeToAdd,
+    });
+    // await insertTextToFile(newTestFilePath, 0, codeToAdd); // Insert at the beginning of the new file
+    replaceAllCodeInFile(newTestFilePath, codeToAdd);
+    // codeToAdd = await addOrUpdateAnyMissingTestsAndOverwriteFile(
     //   newTestFilePath,
     //   codeToAdd
     // );
+    codeToAdd = await fixErrorsInCodeAndOverwriteFile(
+      newTestFilePath,
+      codeToAdd
+    );
 
     // let document = await vscode.workspace.openTextDocument(newTestFilePath); // Open the document
     // await document.save();
@@ -887,6 +892,134 @@ export const writeTestsToNewFile = async (
 //   }
 // };
 
+/**
+ * Formats the given TypeScript code.
+ *
+ * @param {string} code - The TypeScript code to format.
+ * @returns {string} The formatted code as a string.
+ *
+ * @example
+ * const formattedCode = formatTypeScriptCode('const x=1; function foo() { return x; }');
+ * console.log(formattedCode);
+ */
+function formatTypeScriptCode(code: string): string {
+  // Create a source file
+  const fileName = "tempFile.ts";
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    code,
+    ts.ScriptTarget.Latest,
+    true
+  );
+
+  // Get the formatting options
+  const formatOptions: ts.FormatCodeSettings = {
+    indentSize: 2,
+    tabSize: 2,
+    newLineCharacter: "\n",
+    convertTabsToSpaces: true,
+    indentStyle: ts.IndentStyle.Smart,
+    insertSpaceAfterCommaDelimiter: true,
+    insertSpaceAfterSemicolonInForStatements: true,
+    insertSpaceBeforeAndAfterBinaryOperators: true,
+    insertSpaceAfterKeywordsInControlFlowStatements: true,
+    insertSpaceAfterFunctionKeywordForAnonymousFunctions: true,
+    insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis: false,
+    insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets: false,
+    insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces: false,
+    insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces: false,
+    insertSpaceAfterTypeAssertion: false,
+    placeOpenBraceOnNewLineForFunctions: false,
+    placeOpenBraceOnNewLineForControlBlocks: false,
+  };
+
+  // Create a language service
+  const services = ts.createLanguageService({
+    getScriptFileNames: () => [fileName],
+    getScriptVersion: () => "0",
+    getScriptSnapshot: (fileName) => ts.ScriptSnapshot.fromString(code),
+    getCurrentDirectory: () => process.cwd(),
+    getCompilationSettings: () => ({}),
+    getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
+    fileExists: () => true,
+    readFile: () => code,
+    readDirectory: () => [],
+    directoryExists: () => true,
+    getDirectories: () => [],
+  });
+
+  // Get the formatting edits
+  const edits = services.getFormattingEditsForDocument(fileName, formatOptions);
+
+  // Apply the edits to the source code
+  let formattedCode = code;
+  edits.reverse().forEach((edit) => {
+    const start = edit.span.start;
+    const end = start + edit.span.length;
+    formattedCode =
+      formattedCode.slice(0, start) + edit.newText + formattedCode.slice(end);
+  });
+
+  return formattedCode;
+}
+
+export const fixErrorsInCodeAndOverwriteFile = async (
+  filePath: string,
+  code: string,
+  isPartialCode?: boolean,
+  overrideOverwrite?: (codeToAdd: string) => Promise<void>,
+  errors?: string[]
+) => {
+  let codeToAdd = isPartialCode ? await unminimizeCodeFromFile(filePath) : code;
+  let i = 0;
+  let reflectionIterationMax = 2;
+  let errorsParam: string[] | undefined | null = errors;
+  await delay(2000);
+  while (i < reflectionIterationMax) {
+    const errorsInFile = errorsParam || getTypeErrors(filePath) || [];
+    errorsParam = null;
+    console.log({ errorsinfile: errorsInFile.join("\n") });
+    if (!errorsInFile.length) {
+      i++;
+      break;
+    }
+    const fixedCodeStr = await sendMessageToAssistant(
+      `The code you added
+
+      ${isPartialCode ? codeToAdd : ""}
+
+        resulted in these errors. please fix it and return ALL of the fixed code. Your response should only contain code in the json format {"code": string}. the code should only be the code you've given me in this conversation, but please remember the context from this conversation when you think about your answer.
+
+        ${errorsInFile.join("\n")}
+
+        Your response should only contain code in the json format {"code": string}
+        `,
+      "gpt-4o",
+      `Your response should only contain code in the json format {"code": string}`
+    );
+    let fixedCodeJSON: { code: string } | null = null;
+    try {
+      fixedCodeJSON = JSON.parse(
+        fixedCodeStr?.message?.replace(/```json/g, "").replace(/```/g, "") || ""
+      );
+    } catch (error) {
+      console.error(error);
+    }
+    if (fixedCodeJSON?.code) {
+      const fixedCode = fixedCodeJSON?.code || "";
+      codeToAdd = formatTypeScriptCode(fixedCode);
+      if (overrideOverwrite) {
+        await overrideOverwrite(codeToAdd);
+      } else {
+        replaceAllCodeInFile(filePath, fixedCode);
+      }
+    }
+    await delay(2000);
+    i++;
+  }
+
+  return codeToAdd;
+};
 // export const fixErrorsInCodeAndOverwriteFile = async (
 //   filePath: string,
 //   code: string,
@@ -1542,9 +1675,9 @@ async function generateInsertionCode(
       }${UNIT_TEST_BEST_PRACTICES}. it is very important that the code you respond with is only the added code so i can paste it in the middle of the file somwhere. so nothing like imports should be added. Your response should only contain code in this exact JSON FORMAT {"code": string} ${codeBlockWithRefToModify}`;
       break;
     case "new":
-      if (!newTestFileName) {
-        throw new Error("Need new test file name in generateInsertionCode");
-      }
+      // if (!newTestFileName) {
+      //   throw new Error("Need new test file name in generateInsertionCode");
+      // }
       planningPrompt = `ok based on this and the code below, please break down a list of the most useful tests that are BRAND NEW TESTS that will be in a BRAND NEW FILE called ${newTestFileName}. please remember clearly the context of all of the code in this whole conversation. the tests should clearly be for this highlighted code: ${minimizeCode(
         ignoreDiff
           ? minimizeCode(selectedCodeWithoutReferences || "")
@@ -1576,7 +1709,7 @@ async function generateInsertionCode(
   const plan = await sendMessageToAssistant(planningPrompt, "gpt-4o");
   // console.log({ planningPrompt, plan, selectedCodeWithoutReferences });
 
-  const codeToAddJSONStr = await sendMessageToAssistant(
+  let codeToAddJSONStr = await sendMessageToAssistant(
     prompt,
     "gpt-4o",
     `Try to use existing routes or other related existing code as much as you can rather than making things up that don't exist. Your response should only contain code in the json format {"code": string}`
@@ -1589,6 +1722,21 @@ async function generateInsertionCode(
     );
   } catch (error) {
     console.error(error);
+    console.log("trying again...");
+    codeToAddJSONStr = await sendMessageToAssistant(
+      prompt,
+      "gpt-4o",
+      `Try to use existing routes or other related existing code as much as you can rather than making things up that don't exist. Your response should only contain code in the json format {"code": string}`
+    );
+    try {
+      codeToAddJSON = JSON.parse(
+        codeToAddJSONStr?.message
+          ?.replace(/```json/g, "")
+          .replace(/```/g, "") || ""
+      );
+    } catch (error) {
+      console.error(error);
+    }
   }
   return codeToAddJSON?.code || "";
 }
@@ -1660,6 +1808,47 @@ async function insertTextAfterLine(
   }
 
   fs.writeFileSync(filePath, fileContent, "utf-8");
+}
+
+/**
+ * Checks for type errors in the given TypeScript file.
+ *
+ * @param {string} filePath - The path to the TypeScript file to check.
+ * @returns {string[]} An array of strings containing the type errors.
+ *
+ * @example
+ * const errors = getTypeErrors('path/to/your/file.ts');
+ * console.log(errors);
+ */
+function getTypeErrors(filePath: string): string[] {
+  // Create a program instance with the specified file
+  const program = ts.createProgram([filePath], {
+    noEmit: true, // Do not emit JavaScript output
+    skipLibCheck: true, // Skip type checking of declaration files
+  });
+
+  // Get the diagnostics (errors and warnings) from the program
+  const diagnostics = ts.getPreEmitDiagnostics(program);
+
+  // Collect the diagnostics as an array of strings
+  const errorMessages: string[] = diagnostics.map((diagnostic) => {
+    if (diagnostic.file) {
+      const { line, character } = diagnostic.file.getLineAndCharacterOfPosition(
+        diagnostic.start!
+      );
+      const message = ts.flattenDiagnosticMessageText(
+        diagnostic.messageText,
+        "\n"
+      );
+      return `${diagnostic.file.fileName} (${line + 1},${
+        character + 1
+      }): ${message}`;
+    } else {
+      return ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
+    }
+  });
+
+  return errorMessages;
 }
 
 export const UNIT_TEST_BEST_PRACTICES = `
