@@ -11,7 +11,9 @@ import { exec } from "child_process";
 // import ignore from "ignore";
 import { stringTokens } from "openai-chat-tokens";
 import {
+  extractImports,
   generateCodeToInsertIntoExistingFile,
+  getModifiedFileContent,
   replaceAllCodeInFile,
 } from "./existingFile.utils";
 import {
@@ -857,10 +859,7 @@ export const writeTestsToNewFile = async (
       console.info("Failed to create new test file.");
       return;
     }
-    console.log(`inserting code to ${newTestFilePath}`, {
-      newTestFilePath,
-      codeToAdd,
-    });
+    console.log(`inserting code to ${newTestFilePath}`);
     // await insertTextToFile(newTestFilePath, 0, codeToAdd); // Insert at the beginning of the new file
     replaceAllCodeInFile(newTestFilePath, codeToAdd);
     // codeToAdd = await addOrUpdateAnyMissingTestsAndOverwriteFile(
@@ -871,10 +870,11 @@ export const writeTestsToNewFile = async (
       newTestFilePath,
       codeToAdd
     );
-
+    progressBar.update(100);
     // let document = await vscode.workspace.openTextDocument(newTestFilePath); // Open the document
     // await document.save();
 
+    progressBar.stop();
     console.info("New test file created and tests inserted successfully.");
   } else {
     console.error("Failed to generate test code.");
@@ -967,20 +967,25 @@ export const fixErrorsInCodeAndOverwriteFile = async (
   filePath: string,
   code: string,
   isPartialCode?: boolean,
-  overrideOverwrite?: (codeToAdd: string) => Promise<void>,
+  overrideOverwrite?: (codeToAdd: string, imports: string) => Promise<void>,
   errors?: string[]
 ) => {
-  let codeToAdd = isPartialCode ? await unminimizeCodeFromFile(filePath) : code;
+  let codeToAdd = code; // isPartialCode ? await unminimizeCodeFromFile(filePath) : code;
   let i = 0;
   let reflectionIterationMax = 2;
   let errorsParam: string[] | undefined | null = errors;
-  await delay(2000);
+  // await delay(2000);
   while (i < reflectionIterationMax) {
-    const errorsInFile = errorsParam || getTypeErrors(filePath) || [];
+    // const errorsInFile = errorsParam || getTypeErrors(filePath) || [];
+    const errorsInFile = (await runLocalTests()) || [];
+    console.log(`fixing the following errors in file: `, { errorsInFile });
     errorsParam = null;
-    console.log({ errorsinfile: errorsInFile.join("\n") });
-    if (!errorsInFile.length) {
+    // console.log({ errorsinfile: errorsInFile.join("\n") });
+    if (!errorsInFile.success && !errorsInFile.errors.length) {
       i++;
+      const successesInFile = errorsInFile.successes.join("\n");
+      console.log(`Tests ran successfully`);
+      console.log(successesInFile);
       break;
     }
     const fixedCodeStr = await sendMessageToAssistant(
@@ -990,9 +995,11 @@ export const fixErrorsInCodeAndOverwriteFile = async (
 
         resulted in these errors. please fix it and return ALL of the fixed code. Your response should only contain code in the json format {"code": string}. the code should only be the code you've given me in this conversation, but please remember the context from this conversation when you think about your answer.
 
-        ${errorsInFile.join("\n")}
+        ${errorsInFile.errors.join("\n")}
 
         Your response should only contain code in the json format {"code": string}
+        if any tests fail and it's not a clear coding or type issue, then please just comment it out and add a brief reason above it so the user can debug.
+        if any tests fail and it is unrelated to the code you changed, just ignore it.
         `,
       "gpt-4o",
       `Your response should only contain code in the json format {"code": string}`
@@ -1009,13 +1016,15 @@ export const fixErrorsInCodeAndOverwriteFile = async (
       const fixedCode = fixedCodeJSON?.code || "";
       codeToAdd = formatTypeScriptCode(fixedCode);
       if (overrideOverwrite) {
-        await overrideOverwrite(codeToAdd);
+        const { remainingCode, imports } = extractImports(codeToAdd);
+        await overrideOverwrite(remainingCode, imports);
       } else {
         replaceAllCodeInFile(filePath, fixedCode);
       }
     }
-    await delay(2000);
+    // await delay(2000);
     i++;
+    progressBar.update(90);
   }
 
   return codeToAdd;
@@ -1368,14 +1377,16 @@ export const writeTestsInExistingFile = async (
   );*/
   progressBar.update(50);
 
-  const minimizedByLineCodeToAdd = await generateCodeToInsertIntoExistingFile(
-    testFile,
-    minimizedCodeBlockWithRefToModify,
-    resp.lineNumber || 0,
-    fromHighlightedCode ? selectedCodeWithoutReferences : gitDiff2
-  );
-  let codeToAdd = convertCodeStringBackToCode(minimizedByLineCodeToAdd);
-  if (!codeToAdd) {
+  const { fullFileCode: minimizedByLineCodeToAdd, modifiedCode } =
+    await generateCodeToInsertIntoExistingFile(
+      testFile,
+      minimizedCodeBlockWithRefToModify,
+      resp.lineNumber || 0,
+      fromHighlightedCode ? selectedCodeWithoutReferences : gitDiff2
+    );
+  let codeToAdd = modifiedCode;
+  let codeToAddFullFile = convertCodeStringBackToCode(minimizedByLineCodeToAdd);
+  if (!codeToAddFullFile) {
     throw new Error("no code to add");
   }
   // console.log({ codeToAdd });
@@ -1384,11 +1395,34 @@ export const writeTestsInExistingFile = async (
     // console.error(`Failed to read file: ${testFile}`);
     return null;
   }
+  const fullFileCode = await getModifiedFileContent(
+    testFile,
+    resp.lineNumber || 0,
+    convertCodeStringBackToCode(codeToAdd)
+  );
 
   progressBar.update(80);
-  replaceAllCodeInFile(testFile, codeToAdd);
+  replaceAllCodeInFile(testFile, fullFileCode);
 
-  delay(2000);
+  await fixErrorsInCodeAndOverwriteFile(
+    testFile,
+    codeToAdd,
+    true,
+    async (code, imports) => {
+      codeToAdd = code;
+      replaceAllCodeInFile(testFile, originalCode);
+      const fullFileCode = await getModifiedFileContent(
+        testFile,
+        resp.lineNumber || 0,
+        convertCodeStringBackToCode(codeToAdd)
+      );
+
+      const formatted = formatTypeScriptCode(`${imports}
+      ${fullFileCode}`);
+      replaceAllCodeInFile(testFile, formatted);
+    }
+  );
+
   // vscode.commands.executeCommand("editor.action.autoFix");
 
   const newCode = testFile && ts.sys.readFile(testFile);
@@ -1398,7 +1432,7 @@ export const writeTestsInExistingFile = async (
   }
 
   progressBar.update(90);
-
+  progressBar.update(100);
   console.info("Tests inserted successfully into existing file.");
 };
 
@@ -1672,7 +1706,7 @@ async function generateInsertionCode(
         git diff: ${gitDiff}
 
         `
-      }${UNIT_TEST_BEST_PRACTICES}. it is very important that the code you respond with is only the added code so i can paste it in the middle of the file somwhere. so nothing like imports should be added. Your response should only contain code in this exact JSON FORMAT {"code": string} ${codeBlockWithRefToModify}`;
+      }${UNIT_TEST_BEST_PRACTICES}. it is very important that the code you respond with is only the added code so i can paste it in the middle of the file somwhere. so nothing like imports should be added. Your response should only contain code in this exact JSON FORMAT {"code": string} ${codeBlockWithRefToModify}. LASTLY this is important, write this code so that only these new tests you've added will run (e.g. using code like describe.only, it.only, etc)`;
       break;
     case "new":
       // if (!newTestFileName) {
@@ -1697,7 +1731,7 @@ async function generateInsertionCode(
             )} with the gitdiff: ${gitDiff}`
       }. please remember clearly the context of all of the code in this whole conversation but make the tests specifically for this highlighted code: ${minimizeCode(
         selectedCodeWithoutReferences || ""
-      )}. fill in the test code completely so i can run tests immediately. Your response should only contain code in this exact JSON FORMAT {"code": string}`;
+      )}. fill in the test code completely so i can run tests immediately. Your response should only contain code in this exact JSON FORMAT {"code": string}. LASTLY this is important, write this code so that only these new tests you've added will run (e.g. using code like describe.only, it.only, etc)`;
       break;
 
     default:
@@ -1810,45 +1844,287 @@ async function insertTextAfterLine(
   fs.writeFileSync(filePath, fileContent, "utf-8");
 }
 
+// /**
+//  * Checks for type errors in the given TypeScript file.
+//  *
+//  * @param {string} filePath - The path to the TypeScript file to check.
+//  * @returns {string[]} An array of strings containing the type errors.
+//  *
+//  * @example
+//  * const errors = getTypeErrors('path/to/your/file.ts');
+//  * console.log(errors);
+//  */
+// /**
+//  * Checks for type errors in the given TypeScript file.
+//  *
+//  * @param {string} filePath - The path to the TypeScript file to check.
+//  * @returns {string[]} An array of strings containing the type errors.
+//  *
+//  * @example
+//  * const errors = getTypeErrors('path/to/your/file.ts');
+//  * console.log(errors);
+//  */
+// export function getTypeErrors(filePath: string): string[] {
+//   // Helper function to format host for diagnostic messages
+//   const formatHost: ts.FormatDiagnosticsHost = {
+//     getCanonicalFileName: (fileName: string) => fileName,
+//     getCurrentDirectory: ts.sys.getCurrentDirectory,
+//     getNewLine: () => ts.sys.newLine,
+//   };
+//   // Read the tsconfig.json
+//   const configPath = ts.findConfigFile(
+//     path.dirname(filePath),
+//     ts.sys.fileExists,
+//     "tsconfig.json"
+//   );
+
+//   if (!configPath) {
+//     throw new Error("Could not find a valid 'tsconfig.json'.");
+//   }
+
+//   const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
+
+//   if (configFile.error) {
+//     throw new Error(ts.formatDiagnostic(configFile.error, formatHost));
+//   }
+
+//   const parsedCommandLine = ts.parseJsonConfigFileContent(
+//     configFile.config,
+//     ts.sys,
+//     path.dirname(configPath)
+//   );
+//   console.log({ foundtsconfig: parsedCommandLine });
+
+//   const program = ts.createProgram([filePath], {
+//     ...parsedCommandLine.options,
+//     noEmit: true, // Do not emit JavaScript output
+//     skipLibCheck: true, // Skip type checking of declaration files
+//   });
+
+//   // Get the diagnostics (errors and warnings) from the program
+//   const diagnostics = ts.getPreEmitDiagnostics(program);
+
+//   // Collect the diagnostics as an array of strings
+//   const errorMessages: string[] = diagnostics.map((diagnostic) => {
+//     if (diagnostic.file) {
+//       const { line, character } = diagnostic.file.getLineAndCharacterOfPosition(
+//         diagnostic.start!
+//       );
+//       const message = ts.flattenDiagnosticMessageText(
+//         diagnostic.messageText,
+//         "\n"
+//       );
+//       return `${diagnostic.file.fileName} (${line + 1},${
+//         character + 1
+//       }): ${message}`;
+//     } else {
+//       return ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
+//     }
+//   });
+
+//   return errorMessages;
+// }
+
 /**
- * Checks for type errors in the given TypeScript file.
+ * Runs local tests based on the scripts defined in the package.json file and captures detailed error messages.
  *
- * @param {string} filePath - The path to the TypeScript file to check.
- * @returns {string[]} An array of strings containing the type errors.
+ * @returns {Promise<{ success: boolean, errors: string[] }>} A promise that resolves with the test results.
  *
  * @example
- * const errors = getTypeErrors('path/to/your/file.ts');
+ * runLocalTests().then(({ success, errors }) => {
+ *   if (success) {
+ *     console.log('All tests passed');
+ *   } else {
+ *     console.log('Some tests failed');
+ *     console.error(errors);
+ *   }
+ * });
+ */
+// export async function runLocalTests(): Promise<{
+//   success: boolean;
+//   errors: string[];
+// }> {
+//   const packageJsonPath = path.resolve(process.cwd(), "package.json");
+//   const errors: string[] = [];
+
+//   // Read package.json file
+//   let packageJson: any;
+//   try {
+//     const packageJsonContent = fs.readFileSync(packageJsonPath, "utf8");
+//     packageJson = JSON.parse(packageJsonContent);
+//   } catch (error: any) {
+//     return {
+//       success: false,
+//       errors: [`Could not read package.json: ${error.message}`],
+//     };
+//   }
+
+//   // Extract test scripts
+//   const scripts = packageJson.scripts;
+//   if (!scripts) {
+//     return {
+//       success: false,
+//       errors: ["No scripts found in package.json"],
+//     };
+//   }
+
+//   const testScripts = Object.keys(scripts).filter((scriptName) =>
+//     scriptName.toLowerCase().includes("test")
+//   );
+
+//   if (testScripts.length === 0) {
+//     return {
+//       success: false,
+//       errors: ["No test scripts found in package.json"],
+//     };
+//   }
+
+//   // Run test scripts sequentially and collect errors
+//   for (const script of testScripts) {
+//     try {
+//       await runScript(script);
+//     } catch (error: any) {
+//       errors.push(error.message);
+//     }
+//   }
+
+//   return {
+//     success: errors.length === 0,
+//     errors,
+//   };
+// }
+
+/**
+ * Runs local tests based on the scripts defined in the package.json file and captures detailed error messages.
+ *
+ * @returns {Promise<{ success: boolean, errors: string[], successes: string[] }>} A promise that resolves with the test results.
+ *
+ * @example
+ * runLocalTests().then(({ success, errors, successes }) => {
+ *   if (success) {
+ *     console.log('All tests passed');
+ *     console.log(successes.join('\n'));
+ *   } else {
+ *     console.log('Some tests failed');
+ *     console.error(errors.join('\n'));
+ *   }
+ * });
+ */
+export async function runLocalTests(): Promise<{
+  success: boolean;
+  errors: string[];
+  successes: string[];
+}> {
+  const packageJsonPath = path.resolve(process.cwd(), "package.json");
+  const errors: string[] = [];
+  const successes: string[] = [];
+
+  // Read package.json file
+  let packageJson: any;
+  try {
+    const packageJsonContent = fs.readFileSync(packageJsonPath, "utf8");
+    packageJson = JSON.parse(packageJsonContent);
+  } catch (error: any) {
+    return {
+      success: false,
+      errors: [`Could not read package.json: ${error.message}`],
+      successes,
+    };
+  }
+
+  // Extract test scripts
+  const scripts = packageJson.scripts;
+  if (!scripts) {
+    return {
+      success: false,
+      errors: ["No scripts found in package.json"],
+      successes,
+    };
+  }
+
+  const testScripts = Object.keys(scripts).filter((scriptName) =>
+    scriptName.toLowerCase().includes("test")
+  );
+
+  if (testScripts.length === 0) {
+    return {
+      success: false,
+      errors: ["No test scripts found in package.json"],
+      successes,
+    };
+  }
+
+  // Run test scripts sequentially and collect errors and successes
+  for (const script of testScripts) {
+    try {
+      const output = await runScript(script);
+      successes.push(output);
+    } catch (error: any) {
+      errors.push(error.message);
+    }
+  }
+
+  return {
+    success: errors.length === 0,
+    errors,
+    successes,
+  };
+}
+
+/**
+ * Runs a script defined in the package.json file and captures detailed error messages.
+ *
+ * @param {string} script - The name of the script to run.
+ * @returns {Promise<string>} A promise that resolves with the script output when the script has finished running.
+ *
+ * @example
+ * runScript('test').then(output => console.log('Test script finished', output));
+ */
+function runScript(script: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    console.log(`Running script: ${script}`);
+    const command = `npm run ${script}`;
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        return reject(new Error(stderr || stdout));
+      }
+      resolve(stdout);
+    });
+  });
+}
+
+/**
+ * Parses TypeScript errors from the output string.
+ *
+ * @param {string} output - The output string containing TypeScript errors.
+ * @returns {string[]} An array of formatted error messages.
+ *
+ * @example
+ * const errors = parseTypeScriptErrors(stderr);
  * console.log(errors);
  */
-function getTypeErrors(filePath: string): string[] {
-  // Create a program instance with the specified file
-  const program = ts.createProgram([filePath], {
-    noEmit: true, // Do not emit JavaScript output
-    skipLibCheck: true, // Skip type checking of declaration files
-  });
+function parseTypeScriptErrors(output: string): string[] {
+  if (!output) {
+    return ["No error output captured"];
+  }
 
-  // Get the diagnostics (errors and warnings) from the program
-  const diagnostics = ts.getPreEmitDiagnostics(program);
+  const errorLines = output
+    .split("\n")
+    .filter((line) => line.includes("error TS"));
+  const detailedErrors: string[] = [];
 
-  // Collect the diagnostics as an array of strings
-  const errorMessages: string[] = diagnostics.map((diagnostic) => {
-    if (diagnostic.file) {
-      const { line, character } = diagnostic.file.getLineAndCharacterOfPosition(
-        diagnostic.start!
-      );
-      const message = ts.flattenDiagnosticMessageText(
-        diagnostic.messageText,
-        "\n"
-      );
-      return `${diagnostic.file.fileName} (${line + 1},${
-        character + 1
-      }): ${message}`;
-    } else {
-      return ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
+  errorLines.forEach((line) => {
+    const match = line.match(/(.*):(\d+):(\d+) - error TS(\d+): (.*)/);
+    if (match) {
+      const [, filePath, lineNum, colNum, errorCode, message] = match;
+      const detailedError = `${filePath} (${lineNum},${colNum}) - error TS${errorCode}: ${message}`;
+      detailedErrors.push(detailedError);
     }
   });
 
-  return errorMessages;
+  return detailedErrors.length > 0
+    ? detailedErrors
+    : ["No TypeScript errors found"];
 }
 
 export const UNIT_TEST_BEST_PRACTICES = `

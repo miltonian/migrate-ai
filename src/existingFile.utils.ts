@@ -13,6 +13,7 @@ import {
   minimizeCodeByLines,
   unminimizeCodeFromFile,
 } from "./utils";
+import ts = require("typescript");
 
 export const getRelevantStartStringToReplace = async (
   testFile: string,
@@ -58,7 +59,10 @@ export async function generateCodeToInsertIntoExistingFile(
   minimizedCodeBlockWithRefToModify: string,
   lineNumberToAddCode: number,
   gitDiffOrHighlightedCode: string
-): Promise<string> {
+): Promise<{
+  modifiedCode: string;
+  fullFileCode: string;
+}> {
   const ignoreDiff = fromHighlightedCode;
 
   // const scopeToPlaceCode = minimizeCodeByLines(scopeToPlaceCodeUnminimized);
@@ -119,7 +123,60 @@ export async function generateCodeToInsertIntoExistingFile(
   //   unminimizedTestFileCode
   // ).replace(scopeToPlaceCode, newCode);
   //   console.log({ fullFileCode });
-  return fullFileCode;
+  return {
+    modifiedCode: convertCodeStringBackToCode(newCode),
+    fullFileCode,
+  };
+}
+
+/**
+ * Extracts import statements from the given TypeScript code and returns
+ * the remaining code and the extracted imports as separate strings.
+ *
+ * @param {string} code - The TypeScript code to process.
+ * @returns {{ imports: string; remainingCode: string }} An object containing the imports and the remaining code.
+ *
+ * @example
+ * const result = extractImports(`import { x } from 'x';\nconst y = 1;`);
+ * console.log(result.imports); // "import { x } from 'x';"
+ * console.log(result.remainingCode); // "const y = 1;"
+ */
+export function extractImports(code: string): {
+  imports: string;
+  remainingCode: string;
+} {
+  // Create a source file
+  const sourceFile = ts.createSourceFile(
+    "tempFile.ts",
+    code,
+    ts.ScriptTarget.Latest,
+    true
+  );
+
+  let imports = "";
+  let remainingCode = code;
+
+  // Visit each node in the source file
+  function visit(node: ts.Node) {
+    if (ts.isImportDeclaration(node)) {
+      // Extract the import statement text
+      const importText = node.getFullText(sourceFile);
+      imports += importText;
+      // Remove the import statement from the remaining code and preserve line numbers
+      const start = node.getFullStart();
+      const end = node.getEnd();
+      const lines = importText.split("\n").length;
+      remainingCode =
+        remainingCode.slice(0, start) +
+        "\n".repeat(lines - 1) +
+        remainingCode.slice(end);
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+
+  return { imports: imports.trim(), remainingCode: remainingCode.trim() };
 }
 
 export async function insertCodeIntoExistingCode(
@@ -142,7 +199,7 @@ export async function insertCodeIntoExistingCode(
         it is very important that the code you respond with is written in a way that should completely replace the code below. the code needs to be written in a way that completely replaces the original code and can be replaced without causing any new errors and without missing any existing tests. 
         please start here and add the new code: ${scopeToPlaceCode}
         it should be written in a way that i can replace this string in the code ${scopeToPlaceCode} with the new code you provide me. so the code you provide me should itself begin with ${scopeToPlaceCode}
-        Your response should be the code that is written in such a waythat i can essentially replace the string ${scopeToPlaceCode} with your code and have the code work properly. your response is text, not json. only return the code i can paste in my file. nothing else `;
+        Your response should be the code that is written in such a waythat i can essentially replace the string ${scopeToPlaceCode} with your code and have the code work properly. your response is text, not json. only return the code i can paste in my file. nothing else.`;
 
   const codeToAddJSONStr = await sendMessageToAssistant(
     `${promptForNewCodeGeneration}
@@ -150,7 +207,7 @@ export async function insertCodeIntoExistingCode(
     ${addToPrompt}`,
     "gpt-4o",
     `
-      Try to use existing routes or other related existing code as much as you can rather than making things up that don't exist. Your response should only contain the code to add. your response is text, not json. only return the code i can paste in my file. nothing else
+      Try to use existing routes or other related existing code as much as you can rather than making things up that don't exist. Your response should only contain the code to add. your response is text, not json. only return the code i can paste in my file. nothing else. LASTLY this is important, write this code so that only these new tests you've added will run (e.g. using code like describe.only, it.only, etc)
     `
   );
   //   console.log({ codeToAddJSONStr });
@@ -176,7 +233,7 @@ export async function insertCodeIntoExistingCode(
  * @param codeToInsert - The code to be inserted.
  * @returns - The modified content of the file as a string.
  */
-async function getModifiedFileContent(
+export async function getModifiedFileContent(
   filePath: string,
   lineNumber: number,
   codeToInsert: string

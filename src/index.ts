@@ -100,6 +100,13 @@ export function activate() {
     .description("Generate tests from git diff")
     .action(() => {
       highlightAndOpenChangedFiles();
+      // console.log("testing");
+      // // const errors = getTypeErrors(
+      // //   "/Users/alexanderhamilton/Programming/empowerlocal/empowerlocal-backend-node/src/routes/publications.test.ts"
+      // // );
+      // const errors = await runLocalTests();
+      // // console.log(errors);
+      // return;
     });
 
   program.parse(process.argv);
