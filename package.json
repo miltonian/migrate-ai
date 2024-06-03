@@ -1,6 +1,6 @@
 {
   "name": "@celp/celp-cli",
-  "version": "1.0.24",
+  "version": "1.0.25",
   "main": "dist/index.js",
   "license": "MIT",
   "scripts": {
@@ -13,6 +13,7 @@
   "dependencies": {
     "@types/strip-json-comments": "^3.0.0",
     "@typescript-eslint/typescript-estree": "^7.10.0",
+    "chalk": "^4.1.2",
     "cli-progress": "^3.12.0",
     "commander": "^12.1.0",
     "fast-glob": "^3.3.2",
@@ -21,6 +22,7 @@
     "lodash": "^4.17.21",
     "openai": "^4.47.1",
     "openai-chat-tokens": "^0.2.8",
+    "ora": "^5.4.1",
     "strip-json-comments": "^3.1.1",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.4.5",

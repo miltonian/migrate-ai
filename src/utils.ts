@@ -1706,7 +1706,7 @@ async function generateInsertionCode(
         git diff: ${gitDiff}
 
         `
-      }${UNIT_TEST_BEST_PRACTICES}. it is very important that the code you respond with is only the added code so i can paste it in the middle of the file somwhere. so nothing like imports should be added. Your response should only contain code in this exact JSON FORMAT {"code": string} ${codeBlockWithRefToModify}. LASTLY this is important, write this code so that only these new tests you've added will run (e.g. using code like describe.only, it.only, etc)`;
+      }${UNIT_TEST_BEST_PRACTICES}. it is very important that the code you respond with is only the added code so i can paste it in the middle of the file somwhere. so nothing like imports should be added. Your response should only contain code in this exact JSON FORMAT {"code": string} ${codeBlockWithRefToModify}. LASTLY this is important, write this code so that only these new tests you've added will run (e.g. using code like describe.only, it.only, etc).`;
       break;
     case "new":
       // if (!newTestFileName) {
@@ -2126,6 +2126,30 @@ function parseTypeScriptErrors(output: string): string[] {
     ? detailedErrors
     : ["No TypeScript errors found"];
 }
+
+export interface TestSummary {
+  tests: {
+    path: string;
+    testTitles: string;
+    description: string;
+  }[];
+}
+export const getGeneratedTestSummary = async () => {
+  const summaryRaw = await sendMessageToAssistant(
+    `Please summarize the tests you generated in this JSON format. please only return json. {"tests": {"path": string, "testTitles": string, "description": string}[] }. the "description" should be 1 or 2 short sentences`
+  );
+  let summaryJSON: TestSummary | null = null;
+  try {
+    summaryJSON = JSON.parse(
+      summaryRaw?.message?.replace("```json", "").replace("```", "") || ""
+    );
+  } catch (error) {
+    console.warn(error);
+    return null;
+  }
+
+  return summaryJSON;
+};
 
 export const UNIT_TEST_BEST_PRACTICES = `
 here is a list of best practices for writing useful unit tests:

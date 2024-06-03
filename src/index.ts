@@ -6,6 +6,7 @@ import * as cliProgress from "cli-progress";
 import { Command } from "commander";
 import * as fg from "fast-glob";
 import * as fs from "fs";
+
 import * as path from "path";
 import { v4 } from "uuid";
 import {
@@ -17,13 +18,19 @@ import {
 } from "./openai-utils";
 import {
   TOKEN_MAX_LENGTH,
+  TestSummary,
   addToGitignore,
   executeGitCommand,
   extractCodeAndReferences,
+  getGeneratedTestSummary,
   resetTokenCount,
   writeTestsInExistingFile,
   writeTestsToNewFile,
 } from "./utils";
+import inquirer = require("inquirer");
+import chalk = require("chalk");
+import ora = require("ora");
+
 const Inquirer = import("inquirer");
 // import inquirer from "inquirer";
 
@@ -590,6 +597,7 @@ async function highlightAndOpenChangedFiles(
   args?: GithubRepoPreConfig,
   promptEverything?: boolean
 ) {
+  const spinner = ora("Processing diff and generating tests...").start();
   resetTokenCount();
   //   const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
   const workspaceFolder = process.cwd();
@@ -777,12 +785,78 @@ async function highlightAndOpenChangedFiles(
     // });
     // await vscode.window.showTextDocument(newDocument, { preview: false });
     progressBar.stop();
+    spinner.text = "Tests have been generated, finishing up...";
+    const summary = await getGeneratedTestSummary();
+    spinner.succeed("Tests generated successfully!");
+    summary && (await printCompletionMessage(summary));
   } catch (err: any) {
     console.error("Failed to process and display snippets:", err);
     //   console.error(
     //     "Error processing snippets: " + err.message
     //   );
     console.error("Error processing snippets: " + err.message);
+    spinner.fail("Failed to generate tests.");
+    console.error(chalk.red(`Error: ${err.message}`));
+  }
+}
+
+async function printCompletionMessage(testSummary: TestSummary) {
+  const message = `
+${chalk.green.bold("Success!")}
+${chalk.cyan("The following tests were generated:")}
+`;
+
+  console.log(message);
+
+  testSummary.tests.forEach((test) => {
+    console.log(`${chalk.green(test.testTitles)} in ${chalk.blue(test.path)}`);
+    console.log(`${chalk.gray(test.description)}`);
+  });
+
+  const nextSteps = `
+${chalk.yellow("Next Steps:")}
+1. ${chalk.magenta("Run your tests:")} Use ${chalk.green(
+    "npm test"
+  )} or ${chalk.green("yarn test")} to run the generated tests.
+2. ${chalk.magenta(
+    "Review the tests:"
+  )} Check the generated tests to ensure they cover all necessary scenarios.
+3. ${chalk.magenta(
+    "Integrate changes:"
+  )} Commit the generated tests and ensure they are included in your CI/CD pipeline.
+4. ${chalk.magenta(
+    "Remove code that runs only specified tests:"
+  )} There may be code that specifies only a few tests to run, you should remove these before committing the changes.
+
+  `;
+  // ${chalk.yellow("For more information, visit our documentation:")}
+  // ${chalk.blue.underline("https://your-documentation-url.com")}
+
+  console.log(nextSteps);
+
+  const feedbackQuestion = [
+    {
+      type: "confirm",
+      name: "provideFeedback",
+      message: "Would you like to provide feedback?",
+      default: false,
+    },
+  ];
+
+  const { provideFeedback } = await inquirer.prompt(feedbackQuestion);
+
+  if (provideFeedback) {
+    const feedbackPrompt = [
+      {
+        type: "input",
+        name: "feedback",
+        message: "Please provide your feedback:",
+      },
+    ];
+
+    const { feedback } = await inquirer.prompt(feedbackPrompt);
+    console.log(chalk.green("Thank you for your feedback!"));
+    // Here you would send the feedback to your server or save it
   }
 }
 //   );
@@ -862,6 +936,27 @@ async function findFirstTestFile(
         const files = await fg(searchPattern, { onlyFiles: true }); // Use fast-glob to find files matching the pattern
         if (files.length > 0) {
           return files[0]; // Return the path of the first matching file found
+        } else {
+          for (const pattern of testPatterns) {
+            // Construct the full search pattern for the files
+            const searchPattern = path.join(
+              path.join(process.cwd(), testDir),
+              pattern
+            );
+
+            try {
+              // Search for files matching the pattern in the computed directory
+              const files = await fg(searchPattern, { onlyFiles: true }); // Use fast-glob to find files matching the pattern
+              if (files.length > 0) {
+                return files[0]; // Return the path of the first matching file found
+              }
+            } catch (error) {
+              // Log errors related to file searching
+              console.error(
+                `Error searching files in directory ${testDirPath} with pattern ${pattern}: ${error}`
+              );
+            }
+          }
         }
       } catch (error) {
         // Log errors related to file searching
