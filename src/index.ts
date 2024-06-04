@@ -7,6 +7,7 @@ import { Command } from "commander";
 import * as fg from "fast-glob";
 import * as fs from "fs";
 
+import { execSync } from "child_process";
 import * as path from "path";
 import { v4 } from "uuid";
 import {
@@ -629,6 +630,10 @@ async function highlightAndOpenChangedFiles(
   });
   //   progressBar.start(100, 0);
 
+  const startTime = Date.now();
+
+  // Fetch initial code coverage
+  // testSummary.initialCoverage = getCurrentCodeCoverage();
   try {
     // progressBar.update(5);
     await setupEnvironment();
@@ -786,9 +791,15 @@ async function highlightAndOpenChangedFiles(
     // await vscode.window.showTextDocument(newDocument, { preview: false });
     progressBar.stop();
     spinner.text = "Tests have been generated, finishing up...";
+    const generationTime = (Date.now() - startTime) / 1000; // Time in seconds
+    // execSync("npm test", { stdio: "inherit" });
+    // Fetch final code coverage
+    // testSummary.finalCoverage = getCurrentCodeCoverage();
+    // testSummary.coverageIncrease =
+    // testSummary.finalCoverage - testSummary.initialCoverage;
     const summary = await getGeneratedTestSummary();
     spinner.succeed("Tests generated successfully!");
-    summary && (await printCompletionMessage(summary));
+    summary && (await printCompletionMessage({ ...summary, generationTime }));
   } catch (err: any) {
     console.error("Failed to process and display snippets:", err);
     //   console.error(
@@ -800,6 +811,17 @@ async function highlightAndOpenChangedFiles(
   }
 }
 
+function getCurrentCodeCoverage() {
+  // Run nyc to generate the coverage report
+  execSync("nyc report --reporter=json-summary", { stdio: "inherit" });
+
+  // Read and parse the coverage summary report
+  const coverageSummary = JSON.parse(
+    fs.readFileSync("./coverage/coverage-summary.json", "utf-8")
+  );
+  return coverageSummary.total.lines.pct;
+}
+
 async function printCompletionMessage(testSummary: TestSummary) {
   const message = `
 ${chalk.green.bold("Success!")}
@@ -809,28 +831,53 @@ ${chalk.cyan("The following tests were generated:")}
   console.log(message);
 
   testSummary.tests.forEach((test) => {
-    console.log(`${chalk.green(test.testTitles)} in ${chalk.blue(test.path)}`);
-    console.log(`${chalk.gray(test.description)}`);
+    console.log(
+      `${chalk.green("✔")} ${chalk.bold(test.testTitles)} ${chalk.dim(
+        "in"
+      )} ${chalk.blue(test.path)}`
+    );
+    console.log(`  ${chalk.gray(test.description)}\n`);
   });
 
+  const benchmarks = `
+${chalk.yellow.bold("Benchmarks:")}
+${chalk.green("⏱")} ${chalk.cyan.bold(
+    "Generation Time:"
+  )} ${testSummary?.generationTime?.toFixed(2)} seconds.
+${chalk.green("📈")} ${chalk.cyan.bold("Tests Generated:")} ${
+    testSummary.tests.length
+  } tests.
+  `;
+  // ${chalk.green("📈")} ${chalk.cyan.bold(
+  //     "Initial Code Coverage:"
+  //   )} ${testSummary.initialCoverage.toFixed(2)}%.
+  // ${chalk.green("📈")} ${chalk.cyan.bold(
+  //     "Final Code Coverage:"
+  //   )} ${testSummary.finalCoverage.toFixed(2)}%.
+  // ${chalk.green("📈")} ${chalk.cyan.bold(
+  //     "Coverage Increase:"
+  //   )} ${testSummary.coverageIncrease.toFixed(2)}%.
+
+  console.log(benchmarks);
+
   const nextSteps = `
-${chalk.yellow("Next Steps:")}
-1. ${chalk.magenta("Run your tests:")} Use ${chalk.green(
+${chalk.yellow.bold("Next Steps:")}
+1. ${chalk.magenta.bold("Run your tests:")} Use ${chalk.green.bold(
     "npm test"
-  )} or ${chalk.green("yarn test")} to run the generated tests.
-2. ${chalk.magenta(
+  )} or ${chalk.green.bold("yarn test")} to run the generated tests.
+2. ${chalk.magenta.bold(
     "Review the tests:"
   )} Check the generated tests to ensure they cover all necessary scenarios.
-3. ${chalk.magenta(
+3. ${chalk.magenta.bold(
     "Integrate changes:"
   )} Commit the generated tests and ensure they are included in your CI/CD pipeline.
-4. ${chalk.magenta(
-    "Remove code that runs only specified tests:"
-  )} There may be code that specifies only a few tests to run, you should remove these before committing the changes.
+4. ${chalk.magenta.bold(
+    "Remove code for exclusive tests:"
+  )} There may be code in these generated tests that indicate only specific tests should run (e.g. describe.only). You should remove these before committing.
 
   `;
-  // ${chalk.yellow("For more information, visit our documentation:")}
-  // ${chalk.blue.underline("https://your-documentation-url.com")}
+  // ${chalk.yellow.bold("For more information, visit our documentation:")}
+  // ${chalk.blue.bold.underline("https://your-documentation-url.com")}
 
   console.log(nextSteps);
 

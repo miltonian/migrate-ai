@@ -1,6 +1,6 @@
 {
   "name": "@celp/celp-cli",
-  "version": "1.0.25",
+  "version": "1.0.26",
   "main": "dist/index.js",
   "license": "MIT",
   "scripts": {
@@ -20,6 +20,7 @@
     "ignore": "^5.3.1",
     "inquirer": "^8.2.6",
     "lodash": "^4.17.21",
+    "nyc": "^15.1.0",
     "openai": "^4.47.1",
     "openai-chat-tokens": "^0.2.8",
     "ora": "^5.4.1",

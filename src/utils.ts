@@ -2133,6 +2133,10 @@ export interface TestSummary {
     testTitles: string;
     description: string;
   }[];
+  generationTime: number;
+  // initialCoverage: number;
+  // finalCoverage: number;
+  // coverageIncrease: number;
 }
 export const getGeneratedTestSummary = async () => {
   const summaryRaw = await sendMessageToAssistant(
