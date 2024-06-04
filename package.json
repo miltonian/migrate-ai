@@ -1,12 +1,11 @@
 {
   "name": "@celp/celp-cli",
-  "version": "1.0.29",
+  "version": "1.0.30",
   "main": "dist/index.js",
   "license": "Proprietary",
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "yarn clean && tsc && yarn obfuscate",
-    "obfuscate": "node obfuscate.js",
+    "build": "yarn clean && tsc",
     "postbuild": "cp package.json dist/",
     "start": "node dist/index.js"
   },
@@ -43,6 +42,6 @@
     "dist/**/*"
   ],
   "bin": {
-    "@celp/celp-cli": "./dist/index.js"
+    "celp-cli": "./dist/index.js"
   }
 }
