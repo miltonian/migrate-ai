@@ -1,10 +1,10 @@
 {
   "name": "@celp/celp-cli",
-  "version": "1.0.26",
+  "version": "1.0.27",
   "main": "dist/index.js",
-  "license": "MIT",
+  "license": "Proprietary",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node obfuscate.js",
     "postbuild": "cp package.json dist/",
     "start": "node dist/index.js"
   },
@@ -12,6 +12,7 @@
   "homepage": "https://github.com/miltonian/celp-cli#readme",
   "dependencies": {
     "@types/strip-json-comments": "^3.0.0",
+    "@types/terser": "^3.12.0",
     "@typescript-eslint/typescript-estree": "^7.10.0",
     "chalk": "^4.1.2",
     "cli-progress": "^3.12.0",
@@ -25,6 +26,7 @@
     "openai-chat-tokens": "^0.2.8",
     "ora": "^5.4.1",
     "strip-json-comments": "^3.1.1",
+    "terser": "^5.31.0",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.4.5",
     "uuid": "^9.0.1"
