@@ -1,6 +1,6 @@
 {
   "name": "@celp/celp-cli",
-  "version": "1.0.30",
+  "version": "1.0.31",
   "main": "dist/index.js",
   "license": "Proprietary",
   "scripts": {

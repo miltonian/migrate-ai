@@ -6,7 +6,9 @@ import * as cliProgress from "cli-progress";
 import { Command } from "commander";
 import * as fg from "fast-glob";
 import * as fs from "fs";
+import { v4 as uuidv4 } from "uuid";
 
+import axios from "axios";
 import { execSync } from "child_process";
 import * as path from "path";
 import { v4 } from "uuid";
@@ -635,6 +637,8 @@ async function highlightAndOpenChangedFiles(
   // Fetch initial code coverage
   // testSummary.initialCoverage = getCurrentCodeCoverage();
   try {
+    const userId = ensureUserId();
+    const runId = await sendRunStartRequest(userId);
     // progressBar.update(5);
     await setupEnvironment();
 
@@ -799,7 +803,18 @@ async function highlightAndOpenChangedFiles(
     // testSummary.finalCoverage - testSummary.initialCoverage;
     const summary = await getGeneratedTestSummary();
     spinner.succeed("Tests generated successfully!");
-    summary && (await printCompletionMessage({ ...summary, generationTime }));
+    runId &&
+      summary &&
+      (await sendTestSummaryRequest(runId, { ...summary, generationTime }));
+    const feedbackResp =
+      summary && (await printCompletionMessage({ ...summary, generationTime }));
+    runId &&
+      summary &&
+      (await sendTestSummaryRequest(runId, {
+        ...summary,
+        generationTime,
+        feedback: feedbackResp?.feedback || undefined,
+      }));
   } catch (err: any) {
     console.error("Failed to process and display snippets:", err);
     //   console.error(
@@ -901,9 +916,12 @@ ${chalk.yellow.bold("Next Steps:")}
       },
     ];
 
-    const { feedback } = await inquirer.prompt(feedbackPrompt);
+    const { feedback } = (await inquirer.prompt(feedbackPrompt)) as {
+      feedback: string | undefined | null;
+    };
     console.log(chalk.green("Thank you for your feedback!"));
     // Here you would send the feedback to your server or save it
+    return { feedback };
   }
 }
 //   );
@@ -1380,4 +1398,80 @@ function cleanPattern(pattern: string, extension: string): string {
 //   }
 //   return cleanPattern;
 // }
+
+export const ensureUserId = () => {
+  const config = getConfig();
+  let userId: string | undefined = config.userId;
+
+  if (!userId) {
+    userId = uuidv4();
+    setConfig("userId", userId);
+  }
+
+  return userId;
+};
+
+const sendRunStartRequest = async (userId: string): Promise<number | null> => {
+  const baseUrl = "https://91mdbkj4bk.execute-api.us-east-2.amazonaws.com";
+  const url = `${baseUrl}/celp/${userId}/run/start`;
+
+  try {
+    const response = await axios.post(url, undefined, {
+      headers: {
+        "Content-Type": "application/json",
+        "api-key":
+          "UE27O0BMxwim29eF6zqXPIHuRu1tEkGdzSTK6P9uHSr2whEAmLxedmPmBBpUox3gt3jlSyFWR18wiRosHmCpaJRwQZ1zhGMW9rMr9blyx28BkSLsFTd8S2iX2ydyPfVOZeAS",
+      },
+    });
+
+    // console.log("Response:", response.data);
+    const data = response.data as { id?: number };
+    if (data.id) {
+      return data.id;
+    } else {
+      return null;
+    }
+  } catch (error: any) {
+    if (axios.isAxiosError(error)) {
+      // console.error("Error response:", error.response?.data);
+    } else {
+      // console.error("Error:", error.message);
+    }
+    // throw error;
+    return null;
+  }
+};
+const sendTestSummaryRequest = async (
+  runId: number,
+  requestBody: TestSummary
+) => {
+  const baseUrl = "https://91mdbkj4bk.execute-api.us-east-2.amazonaws.com";
+  const url = `${baseUrl}/celp/${runId}/summary`;
+
+  try {
+    const response = await axios.post(
+      url,
+      { summary: requestBody },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "api-key":
+            "UE27O0BMxwim29eF6zqXPIHuRu1tEkGdzSTK6P9uHSr2whEAmLxedmPmBBpUox3gt3jlSyFWR18wiRosHmCpaJRwQZ1zhGMW9rMr9blyx28BkSLsFTd8S2iX2ydyPfVOZeAS",
+        },
+      }
+    );
+
+    // console.log("Response:", response.data);
+    return response.data;
+  } catch (error: any) {
+    if (axios.isAxiosError(error)) {
+      console.error("Error response:", error.response?.data);
+    } else {
+      console.error("Error:", error.message);
+    }
+    // throw error;
+    return null;
+  }
+};
+
 activate();

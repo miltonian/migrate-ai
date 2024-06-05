@@ -2134,6 +2134,7 @@ export interface TestSummary {
     description: string;
   }[];
   generationTime: number;
+  feedback?: string;
   // initialCoverage: number;
   // finalCoverage: number;
   // coverageIncrease: number;
