@@ -1211,10 +1211,7 @@ async function collectAndDisplaySnippets(
 
     const diff =
       overrideDiff ||
-      (await executeGitCommand(
-        `git diff FETCH_HEAD -- ${file}`,
-        workspaceFolder
-      ));
+      (await executeGitCommand(`git diff -- ${file}`, workspaceFolder));
 
     const changedLines = parseDiff(diff);
     const enclosingNodes = findEnclosingNodes(ast, changedLines, document);
