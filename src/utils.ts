@@ -625,6 +625,12 @@ function checkFileExistence(filePath: string): string | null {
   if (filePath.includes("node_modules")) {
     return null;
   }
+  if (filePath.includes("migration")) {
+    return null;
+  }
+  if (filePath.includes("migrations")) {
+    return null;
+  }
   if (filePath.includes("dist/")) {
     return null;
   }

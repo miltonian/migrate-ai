@@ -1272,57 +1272,32 @@ async function findTestFilePath(
   const baseName = path.basename(sourceFilePath, path.extname(sourceFilePath)); // Base filename without extension
   const extension = path.extname(sourceFilePath); // The extension of the source file
 
-  // Helper function to check if a test file exists
-  async function checkTestFile(testDirPath: string, cleanPattern: string) {
-    const testFileName = `${baseName}${cleanPattern}`;
-    const testFilePath = path.join(testDirPath, testFileName);
-    console.log(`Checking Test File Path: ${testFilePath}`);
-
-    // Check if the test file exists using Node.js fs module
-    try {
-      await fs.promises.stat(testFilePath);
-      return testFilePath; // If file exists, return the path
-    } catch (error) {
-      // File does not exist, continue checking
-      return null;
-    }
-  }
-
   // Iterate through potential directories, including the current directory
   for (const testDir of testDirs) {
     const testDirPath = path.join(sourceFileDir, testDir);
     console.log(`Test Directory Path: ${testDirPath}`);
 
     for (const pattern of testPatterns) {
+      // Ensure the pattern does not include wildcards or multiple extensions
       let cleanPattern = pattern.replace("*", ""); // Remove any wildcard characters
       if (!cleanPattern.endsWith(extension)) {
         cleanPattern += extension; // Ensure the extension is added only once
       }
-      const foundTestFile = await checkTestFile(testDirPath, cleanPattern);
-      if (foundTestFile) return foundTestFile;
-    }
-  }
+      const testFileName = `${baseName}${cleanPattern}`;
+      const testFilePath = path.join(testDirPath, testFileName);
+      console.log(`Checking Test File Path: ${testFilePath}`);
 
-  // Search in parent directories, progressively moving up
-  let currentDir = sourceFileDir;
-  while (currentDir !== path.resolve(currentDir, "..")) {
-    for (const testDir of testDirs) {
-      const testDirPath = path.join(currentDir, testDir);
-      console.log(`Test Directory Path: ${testDirPath}`);
-
-      for (const pattern of testPatterns) {
-        let cleanPattern = pattern.replace("*", ""); // Remove any wildcard characters
-        if (!cleanPattern.endsWith(extension)) {
-          cleanPattern += extension; // Ensure the extension is added only once
-        }
-        const foundTestFile = await checkTestFile(testDirPath, cleanPattern);
-        if (foundTestFile) return foundTestFile;
+      // Check if the test file exists using Node.js fs module
+      try {
+        await fs.promises.stat(testFilePath);
+        return testFilePath; // If file exists, return the path
+      } catch (error) {
+        // File does not exist, continue checking
       }
     }
-    currentDir = path.resolve(currentDir, "..");
   }
 
-  // If no test file is found in the specified directories, search the entire project using fast-glob with specific patterns
+  // If no test file is found in the specified directories, search the entire project
   const projectRoot = process.cwd();
   const globPatterns = testPatterns.map((pattern) => `**/${pattern}`);
 
@@ -1331,27 +1306,7 @@ async function findTestFilePath(
     const matchingFile = files.find(
       (file) => path.basename(file, path.extname(file)) === baseName
     );
-    if (matchingFile) {
-      console.log(`Found Test File in Project: ${matchingFile}`);
-      return path.resolve(projectRoot, matchingFile);
-    } else {
-      console.log("No matching test file found with base name.");
-
-      // Secondary check with passed test patterns
-      const secondaryFiles = await fg(
-        testPatterns.map((pattern) => `**/${pattern}`),
-        { cwd: projectRoot }
-      );
-      if (secondaryFiles.length > 0) {
-        console.log(
-          `Found Test Files in Project with pattern: ${secondaryFiles}`
-        );
-        return path.resolve(projectRoot, secondaryFiles[0]);
-      } else {
-        console.log("No matching test file found in project.");
-        return null;
-      }
-    }
+    return matchingFile ? path.resolve(projectRoot, matchingFile) : null;
   } catch (err) {
     console.error(err);
     return null;
