@@ -1465,9 +1465,9 @@ const sendTestSummaryRequest = async (
     return response.data;
   } catch (error: any) {
     if (axios.isAxiosError(error)) {
-      console.error("Error response:", error.response?.data);
+      // console.error("Error response:", error.response?.data);
     } else {
-      console.error("Error:", error.message);
+      // console.error("Error:", error.message);
     }
     // throw error;
     return null;
