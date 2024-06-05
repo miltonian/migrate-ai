@@ -978,7 +978,7 @@ export const fixErrorsInCodeAndOverwriteFile = async (
 ) => {
   let codeToAdd = code; // isPartialCode ? await unminimizeCodeFromFile(filePath) : code;
   let i = 0;
-  let reflectionIterationMax = 2;
+  let reflectionIterationMax = 3;
   let errorsParam: string[] | undefined | null = errors;
   // await delay(2000);
   while (i < reflectionIterationMax) {

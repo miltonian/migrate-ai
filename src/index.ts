@@ -678,6 +678,8 @@ async function highlightAndOpenChangedFiles(
     await initializeClient(openaiApiKey);
     // progressBar.update(10);
 
+    const summaries: TestSummary[] = [];
+
     const changedFiles = (await getChangedFiles(workspaceFolder)).filter(
       (f) => {
         const isValidFile =
@@ -782,6 +784,9 @@ async function highlightAndOpenChangedFiles(
               : `will create new test file`
           } | ${snippets}`
         );
+
+        const summary = await getGeneratedTestSummary();
+        summary && summaries.push(summary);
       } catch (error) {
         console.error(error);
       }
@@ -803,20 +808,25 @@ async function highlightAndOpenChangedFiles(
     // testSummary.finalCoverage = getCurrentCodeCoverage();
     // testSummary.coverageIncrease =
     // testSummary.finalCoverage - testSummary.initialCoverage;
-    const summary = await getGeneratedTestSummary();
+
     spinner.succeed("Tests generated successfully!");
+
+    const summary: TestSummary = {
+      tests: summaries.flatMap((s) => s.tests, 0),
+      generationTime,
+    };
     runId &&
       summary &&
       (await sendTestSummaryRequest(runId, { ...summary, generationTime }));
-    const feedbackResp =
-      summary && (await printCompletionMessage({ ...summary, generationTime }));
-    runId &&
-      summary &&
-      (await sendTestSummaryRequest(runId, {
-        ...summary,
-        generationTime,
-        feedback: feedbackResp?.feedback || undefined,
-      }));
+
+    summary && (await printCompletionMessage({ ...summary, generationTime }));
+    // runId &&
+    //   summary &&
+    //   (await sendTestSummaryRequest(runId, {
+    //     ...summary,
+    //     generationTime,
+    //     feedback: feedbackResp?.feedback || undefined,
+    //   }));
   } catch (err: any) {
     console.error("Failed to process and display snippets:", err);
     //   console.error(
@@ -898,33 +908,34 @@ ${chalk.yellow.bold("Next Steps:")}
 
   console.log(nextSteps);
 
-  const feedbackQuestion = [
-    {
-      type: "confirm",
-      name: "provideFeedback",
-      message: "Would you like to provide feedback?",
-      default: false,
-    },
-  ];
+  // const feedbackQuestion = [
+  //   {
+  //     type: "confirm",
+  //     name: "provideFeedback",
+  //     message: "Would you like to provide feedback?",
+  //     default: false,
+  //   },
+  // ];
 
-  const { provideFeedback } = await inquirer.prompt(feedbackQuestion);
+  // const { provideFeedback } = await inquirer.prompt(feedbackQuestion);
 
-  if (provideFeedback) {
-    const feedbackPrompt = [
-      {
-        type: "input",
-        name: "feedback",
-        message: "Please provide your feedback:",
-      },
-    ];
+  // if (provideFeedback) {
+  //   const feedbackPrompt = [
+  //     {
+  //       type: "input",
+  //       name: "feedback",
+  //       message: "Please provide your feedback:",
+  //     },
+  //   ];
 
-    const { feedback } = (await inquirer.prompt(feedbackPrompt)) as {
-      feedback: string | undefined | null;
-    };
-    console.log(chalk.green("Thank you for your feedback!"));
-    // Here you would send the feedback to your server or save it
-    return { feedback };
-  }
+  //   const { feedback } = (await inquirer.prompt(feedbackPrompt)) as {
+  //     feedback: string | undefined | null;
+  //   };
+  //   console.log(chalk.green("Thank you for your feedback!"));
+  //   // Here you would send the feedback to your server or save it
+  //   return { feedback };
+  return null;
+  // }
 }
 //   );
 // }
@@ -1193,6 +1204,54 @@ export function findEnclosingNodes(
 //   }
 // }
 
+/**
+ * Checks if a branch exists in the local repository.
+ *
+ * @param branch - The branch name to check.
+ * @param workspaceFolder - The folder where the git command should be executed.
+ * @returns A promise that resolves to true if the branch exists, false otherwise.
+ */
+async function branchExists(
+  branch: string,
+  workspaceFolder: string
+): Promise<boolean> {
+  try {
+    await executeGitCommand(
+      `git rev-parse --verify ${branch}`,
+      workspaceFolder
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Gets the local diff of the current branch compared to the local main or master branch for a specific file.
+ *
+ * @param file - The file for which to get the diff.
+ * @param workspaceFolder - The folder where the git command should be executed.
+ * @param overrideDiff - Optional parameter to provide a custom diff string.
+ * @returns A promise that resolves to the diff string.
+ */
+async function getBranchDiff(
+  file: string,
+  workspaceFolder: string,
+  overrideDiff?: string
+): Promise<string> {
+  const mainBranchExists = await branchExists("main", workspaceFolder);
+  const baseBranch = mainBranchExists ? "main" : "master";
+
+  const diff =
+    overrideDiff ||
+    (await executeGitCommand(
+      `git diff ${baseBranch} -- ${file}`,
+      workspaceFolder
+    ));
+
+  return diff;
+}
+
 async function collectAndDisplaySnippets(
   file: string,
   workspaceFolder: string,
@@ -1209,9 +1268,8 @@ async function collectAndDisplaySnippets(
   try {
     const ast = parse(text, { loc: true, range: true, jsx: false });
 
-    const diff =
-      overrideDiff ||
-      (await executeGitCommand(`git diff -- ${file}`, workspaceFolder));
+    const diff = overrideDiff || (await getBranchDiff(file, workspaceFolder));
+    // (await executeGitCommand(`git diff -- ${file}`, workspaceFolder));
 
     const changedLines = parseDiff(diff);
     const enclosingNodes = findEnclosingNodes(ast, changedLines, document);
