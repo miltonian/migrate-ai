@@ -2,7 +2,6 @@
 
 import { TSESTree } from "@typescript-eslint/types";
 import { parse } from "@typescript-eslint/typescript-estree";
-import * as cliProgress from "cli-progress";
 import { Command } from "commander";
 import * as fg from "fast-glob";
 import * as fs from "fs";
@@ -43,7 +42,7 @@ export let selectedCode: string = "";
 export let selectedCodeWithoutReferences: string = "";
 export let currentGitDiff: string = "";
 export let fromHighlightedCode = false;
-export let progressBar: cliProgress.SingleBar;
+// export let progressBar: cliProgress.SingleBar;
 export let mainBranch: "main" | "master" = "main";
 // export let editorSelection: vscode.Selection | null = null;
 // export let textEditor: vscode.TextEditor | undefined;
@@ -624,12 +623,12 @@ async function highlightAndOpenChangedFiles(
     fs.writeFileSync(threadIdFile, "");
   }
 
-  progressBar = new cliProgress.SingleBar({
-    // format: 'CLI Progress |' + colors.cyan('{bar}') + '| {percentage}% || {value}/{total} Chunks || Speed: {speed}',
-    barCompleteChar: "\u2588",
-    barIncompleteChar: "\u2591",
-    hideCursor: true,
-  });
+  // progressBar = new cliProgress.SingleBar({
+  //   // format: 'CLI Progress |' + colors.cyan('{bar}') + '| {percentage}% || {value}/{total} Chunks || Speed: {speed}',
+  //   barCompleteChar: "\u2588",
+  //   barIncompleteChar: "\u2591",
+  //   hideCursor: true,
+  // });
   //   progressBar.start(100, 0);
 
   const startTime = Date.now();
@@ -648,8 +647,8 @@ async function highlightAndOpenChangedFiles(
 
     // Ensure a valid API key is available
     const openaiApiKey = await ensureApiKey();
-    progressBar.start(100, 0);
-    progressBar.update(5);
+    // progressBar.start(100, 0);
+    // progressBar.update(5);
     // args?.openAiKey //|| promptEverything
     //   ? await promptForOpenAIAPIKey()
     //   :
@@ -677,7 +676,7 @@ async function highlightAndOpenChangedFiles(
 
     // Initialize the OpenAI client with the API key
     await initializeClient(openaiApiKey);
-    progressBar.update(10);
+    // progressBar.update(10);
 
     const changedFiles = (await getChangedFiles(workspaceFolder)).filter(
       (f) => {
@@ -708,81 +707,84 @@ async function highlightAndOpenChangedFiles(
     console.log(`changed files: ${changedFiles}`);
     let i = 0;
     for (const file of changedFiles) {
-      console.log(`---`);
-      console.log(`Starting to generate tests for ${file}`);
-      progressBar.update(15);
-      const snippets = await collectAndDisplaySnippets(file, workspaceFolder);
+      try {
+        console.log(`---`);
+        console.log(`Starting to generate tests for ${file}`);
+        // progressBar.update(15);
+        const snippets = await collectAndDisplaySnippets(file, workspaceFolder);
 
-      selectedCode = snippets?.codeWithReferences.join("") || "";
-      selectedCodeWithoutReferences =
-        snippets?.codeWithoutReferences.join("") || "";
-      currentGitDiff = snippets?.gitDiff || "";
-      //   console.log({
-      //     snippets,
-      //     currentGitDiff,
-      //     selectedCodeWithoutReferences,
-      //     selectedCodeWithoutReferencesstring: JSON.stringify(
-      //       selectedCodeWithoutReferences
-      //     ),
-      //   });
+        selectedCode = snippets?.codeWithReferences.join("") || "";
+        selectedCodeWithoutReferences =
+          snippets?.codeWithoutReferences.join("") || "";
+        currentGitDiff = snippets?.gitDiff || "";
+        //   console.log({
+        //     snippets,
+        //     currentGitDiff,
+        //     selectedCodeWithoutReferences,
+        //     selectedCodeWithoutReferencesstring: JSON.stringify(
+        //       selectedCodeWithoutReferences
+        //     ),
+        //   });
 
-      if (!selectedCode) {
-        //   console.info(
-        //     `Code has not changed in ${file}, skipping...`
-        //   );
-        console.info(`Code has not changed in ${file}, skipping...`);
-        continue;
-      }
-
-      progressBar.update(20);
-      const existingAssistantForThisCode = await getAssistantIdFromSelectedCode(
-        selectedCodeWithoutReferences
-      );
-      let isExistingAssistant = false;
-
-      if (!existingAssistantForThisCode) {
-        await createAndStoreAssistant(
-          `celp-${v4()}`,
-          selectedCodeWithoutReferences
-        );
-      } else {
-        isExistingAssistant = true;
-      }
-      // const workspaceRoot =
-      //   vscode.workspace.workspaceFolders?.[0].uri.fsPath;
-      const workspaceRoot = process.cwd();
-      const fullPath = path.join(workspaceRoot || "", file);
-      if (!isExistingAssistant) {
-        progressBar.update(25);
-        // ADD TO CONTEXT: selected code with references
-        await addSelectedCodeWithRefToAIContext(fullPath, selectedCode);
-
-        // ADD TO CONTEXT: selected code with references
-        // await addCodeThatReferencesHighlightedToAIContext(context, fullPath, snippets.join(''));
-      }
-
-      progressBar.update(25);
-      const foundTestFile = await findTestFilePath(file);
-
-      if (foundTestFile) {
-        progressBar.update(30);
-        // await openFilesInEditor([foundTestFile]);
-        await handleExistingTestFile(foundTestFile);
-      } else {
-        progressBar.update(30);
-        const foundTestFile = await findFirstTestFile(fullPath);
-        if (!foundTestFile) {
-          throw new Error("Could not find test file");
+        if (!selectedCode) {
+          //   console.info(
+          //     `Code has not changed in ${file}, skipping...`
+          //   );
+          console.info(`Code has not changed in ${file}, skipping...`);
+          continue;
         }
-        await handleNewTestFile(fullPath, foundTestFile);
+
+        // progressBar.update(20);
+        const existingAssistantForThisCode =
+          await getAssistantIdFromSelectedCode(selectedCodeWithoutReferences);
+        let isExistingAssistant = false;
+
+        if (!existingAssistantForThisCode) {
+          await createAndStoreAssistant(
+            `celp-${v4()}`,
+            selectedCodeWithoutReferences
+          );
+        } else {
+          isExistingAssistant = true;
+        }
+        // const workspaceRoot =
+        //   vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+        const workspaceRoot = process.cwd();
+        const fullPath = path.join(workspaceRoot || "", file);
+        if (!isExistingAssistant) {
+          // progressBar.update(25);
+          // ADD TO CONTEXT: selected code with references
+          await addSelectedCodeWithRefToAIContext(fullPath, selectedCode);
+
+          // ADD TO CONTEXT: selected code with references
+          // await addCodeThatReferencesHighlightedToAIContext(context, fullPath, snippets.join(''));
+        }
+
+        // progressBar.update(25);
+        const foundTestFile = await findTestFilePath(file);
+
+        if (foundTestFile) {
+          // progressBar.update(30);
+          // await openFilesInEditor([foundTestFile]);
+          await handleExistingTestFile(foundTestFile);
+        } else {
+          // progressBar.update(30);
+          const foundTestFile = await findFirstTestFile(fullPath);
+          if (!foundTestFile) {
+            throw new Error("Could not find test file");
+          }
+          await handleNewTestFile(fullPath, foundTestFile);
+        }
+        allSnippets = allSnippets.concat(
+          `${
+            foundTestFile
+              ? `will put tests in ${foundTestFile}`
+              : `will create new test file`
+          } | ${snippets}`
+        );
+      } catch (error) {
+        console.error(error);
       }
-      allSnippets = allSnippets.concat(
-        `${
-          foundTestFile
-            ? `will put tests in ${foundTestFile}`
-            : `will create new test file`
-        } | ${snippets}`
-      );
       i++;
     }
 
@@ -793,7 +795,7 @@ async function highlightAndOpenChangedFiles(
     //   language: "text",
     // });
     // await vscode.window.showTextDocument(newDocument, { preview: false });
-    progressBar.stop();
+    // progressBar.stop();
     spinner.text = "Tests have been generated, finishing up...";
     const generationTime = (Date.now() - startTime) / 1000; // Time in seconds
     // execSync("npm test", { stdio: "inherit" });
@@ -1270,32 +1272,90 @@ async function findTestFilePath(
   const baseName = path.basename(sourceFilePath, path.extname(sourceFilePath)); // Base filename without extension
   const extension = path.extname(sourceFilePath); // The extension of the source file
 
+  // Helper function to check if a test file exists
+  async function checkTestFile(testDirPath: string, cleanPattern: string) {
+    const testFileName = `${baseName}${cleanPattern}`;
+    const testFilePath = path.join(testDirPath, testFileName);
+    console.log(`Checking Test File Path: ${testFilePath}`);
+
+    // Check if the test file exists using Node.js fs module
+    try {
+      await fs.promises.stat(testFilePath);
+      return testFilePath; // If file exists, return the path
+    } catch (error) {
+      // File does not exist, continue checking
+      return null;
+    }
+  }
+
   // Iterate through potential directories, including the current directory
   for (const testDir of testDirs) {
     const testDirPath = path.join(sourceFileDir, testDir);
     console.log(`Test Directory Path: ${testDirPath}`);
 
     for (const pattern of testPatterns) {
-      // Ensure the pattern does not include wildcards or multiple extensions
       let cleanPattern = pattern.replace("*", ""); // Remove any wildcard characters
       if (!cleanPattern.endsWith(extension)) {
         cleanPattern += extension; // Ensure the extension is added only once
       }
-      const testFileName = `${baseName}${cleanPattern}`;
-      const testFilePath = path.join(testDirPath, testFileName);
-      console.log(`Checking Test File Path: ${testFilePath}`);
-
-      // Check if the test file exists using Node.js fs module
-      try {
-        await fs.promises.stat(testFilePath);
-        return testFilePath; // If file exists, return the path
-      } catch (error) {
-        // File does not exist, continue checking
-      }
+      const foundTestFile = await checkTestFile(testDirPath, cleanPattern);
+      if (foundTestFile) return foundTestFile;
     }
   }
 
-  return null; // Return null if no test file path is found
+  // Search in parent directories, progressively moving up
+  let currentDir = sourceFileDir;
+  while (currentDir !== path.resolve(currentDir, "..")) {
+    for (const testDir of testDirs) {
+      const testDirPath = path.join(currentDir, testDir);
+      console.log(`Test Directory Path: ${testDirPath}`);
+
+      for (const pattern of testPatterns) {
+        let cleanPattern = pattern.replace("*", ""); // Remove any wildcard characters
+        if (!cleanPattern.endsWith(extension)) {
+          cleanPattern += extension; // Ensure the extension is added only once
+        }
+        const foundTestFile = await checkTestFile(testDirPath, cleanPattern);
+        if (foundTestFile) return foundTestFile;
+      }
+    }
+    currentDir = path.resolve(currentDir, "..");
+  }
+
+  // If no test file is found in the specified directories, search the entire project using fast-glob with specific patterns
+  const projectRoot = process.cwd();
+  const globPatterns = testPatterns.map((pattern) => `**/${pattern}`);
+
+  try {
+    const files = await fg(globPatterns, { cwd: projectRoot });
+    const matchingFile = files.find(
+      (file) => path.basename(file, path.extname(file)) === baseName
+    );
+    if (matchingFile) {
+      console.log(`Found Test File in Project: ${matchingFile}`);
+      return path.resolve(projectRoot, matchingFile);
+    } else {
+      console.log("No matching test file found with base name.");
+
+      // Secondary check with passed test patterns
+      const secondaryFiles = await fg(
+        testPatterns.map((pattern) => `**/${pattern}`),
+        { cwd: projectRoot }
+      );
+      if (secondaryFiles.length > 0) {
+        console.log(
+          `Found Test Files in Project with pattern: ${secondaryFiles}`
+        );
+        return path.resolve(projectRoot, secondaryFiles[0]);
+      } else {
+        console.log("No matching test file found in project.");
+        return null;
+      }
+    }
+  } catch (err) {
+    console.error(err);
+    return null;
+  }
 }
 
 /**

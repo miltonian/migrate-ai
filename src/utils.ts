@@ -19,7 +19,7 @@ import {
 import {
   currentGitDiff,
   fromHighlightedCode,
-  progressBar,
+  // progressBar,
   selectedCodeWithoutReferences,
 } from "./index";
 
@@ -838,7 +838,7 @@ export const writeTestsToNewFile = async (
       "Something went wrong with getting code from test file used for context"
     );
   }
-  progressBar.update(50);
+  // progressBar.update(50);
   // add other test file to context
   await sendMessageToAssistant(
     `also use this test code for context. await my further instructions ${
@@ -853,7 +853,7 @@ export const writeTestsToNewFile = async (
   );
 
   if (codeToAdd) {
-    progressBar.update(80);
+    // progressBar.update(80);
     const newTestFilePath = await createNewTestFile(filePath, autoNewFileName);
     if (!newTestFilePath) {
       console.info("Failed to create new test file.");
@@ -870,11 +870,11 @@ export const writeTestsToNewFile = async (
       newTestFilePath,
       codeToAdd
     );
-    progressBar.update(100);
+    // progressBar.update(100);
     // let document = await vscode.workspace.openTextDocument(newTestFilePath); // Open the document
     // await document.save();
 
-    progressBar.stop();
+    // progressBar.stop();
     console.info("New test file created and tests inserted successfully.");
   } else {
     console.error("Failed to generate test code.");
@@ -1024,7 +1024,7 @@ export const fixErrorsInCodeAndOverwriteFile = async (
     }
     // await delay(2000);
     i++;
-    progressBar.update(90);
+    // progressBar.update(90);
   }
 
   return codeToAdd;
@@ -1375,7 +1375,7 @@ export const writeTestsInExistingFile = async (
       workspaceRoot
     )
   );*/
-  progressBar.update(50);
+  // progressBar.update(50);
 
   const { fullFileCode: minimizedByLineCodeToAdd, modifiedCode } =
     await generateCodeToInsertIntoExistingFile(
@@ -1401,7 +1401,7 @@ export const writeTestsInExistingFile = async (
     convertCodeStringBackToCode(codeToAdd)
   );
 
-  progressBar.update(80);
+  // progressBar.update(80);
   replaceAllCodeInFile(testFile, fullFileCode);
 
   await fixErrorsInCodeAndOverwriteFile(
@@ -1431,8 +1431,8 @@ export const writeTestsInExistingFile = async (
     return null;
   }
 
-  progressBar.update(90);
-  progressBar.update(100);
+  // progressBar.update(90);
+  // progressBar.update(100);
   console.info("Tests inserted successfully into existing file.");
 };
 
