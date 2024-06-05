@@ -1,6 +1,6 @@
 {
   "name": "@celp/celp-cli",
-  "version": "1.0.32",
+  "version": "1.0.31",
   "main": "dist/index.js",
   "license": "Proprietary",
   "scripts": {
@@ -12,9 +12,11 @@
   "repository": "https://github.com/miltonian/celp-cli",
   "homepage": "https://github.com/miltonian/celp-cli#readme",
   "dependencies": {
+    "@types/axios": "^0.14.0",
     "@types/strip-json-comments": "^3.0.0",
     "@types/terser": "^3.12.0",
     "@typescript-eslint/typescript-estree": "^7.10.0",
+    "axios": "^1.7.2",
     "chalk": "^4.1.2",
     "cli-progress": "^3.12.0",
     "commander": "^12.1.0",
