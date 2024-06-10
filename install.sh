@@ -21,10 +21,10 @@ esac
 
 case "$OS" in
   linux)
-    URL="https://github.com/miltonian/celp-cli/releases/download/${VERSION}/celp-cli-linux-${ARCH}"
+    URL="https://github.com/miltonian/migrate-ai/releases/download/${VERSION}/migrate-ai-linux-${ARCH}"
     ;;
   darwin)
-    URL="https://github.com/miltonian/celp-cli/releases/download/${VERSION}/celp-cli-macos-${ARCH}"
+    URL="https://github.com/miltonian/migrate-ai/releases/download/${VERSION}/migrate-ai-macos-${ARCH}"
     ;;
   *)
     echo "Unsupported OS: $OS"
@@ -32,8 +32,8 @@ case "$OS" in
     ;;
 esac
 
-echo "Downloading celp-cli from ${URL}..."
-sudo curl -L -o /usr/local/bin/celp-cli "${URL}"
-sudo chmod +x /usr/local/bin/celp-cli
+echo "Downloading migrate-ai from ${URL}..."
+sudo curl -L -o /usr/local/bin/migrate-ai "${URL}"
+sudo chmod +x /usr/local/bin/migrate-ai
 
-echo "celp-cli installed successfully."
+echo "migrate-ai installed successfully."

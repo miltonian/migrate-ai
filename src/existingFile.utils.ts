@@ -1,5 +1,4 @@
 import * as fs from "fs";
-import ts = require("typescript");
 
 /**
  * Replaces all code in a given file with the provided new code.

@@ -1,6 +1,6 @@
 {
   "name": "@miltonian/migrate-ai",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "dist/index.js",
   "license": "MIT",
   "scripts": {
@@ -25,10 +25,8 @@
     "commander": "^12.1.0",
     "eslint": "^9.4.0",
     "fast-glob": "^3.3.2",
-    "ignore": "^5.3.1",
     "inquirer": "^8.2.6",
     "lodash": "^4.17.21",
-    "nyc": "^15.1.0",
     "openai": "^4.47.1",
     "openai-chat-tokens": "^0.2.8",
     "ora": "^5.4.1",
@@ -49,6 +47,9 @@
     "dist/**/*"
   ],
   "bin": {
-    "celp-cli": "./dist/index.js"
+    "migrate-ai": "./dist/index.js"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
