@@ -1,5 +1,5 @@
 {
-  "name": "@miltonian/migration-ai",
+  "name": "@miltonian/migrate-ai",
   "version": "1.0.0",
   "main": "dist/index.js",
   "license": "MIT",
@@ -9,8 +9,8 @@
     "postbuild": "cp package.json dist/",
     "start": "node dist/index.js"
   },
-  "repository": "https://github.com/miltonian/migration-ai",
-  "homepage": "https://github.com/miltonian/migration-ai#readme",
+  "repository": "https://github.com/miltonian/migrate-ai",
+  "homepage": "https://github.com/miltonian/migrate-ai#readme",
   "dependencies": {
     "@types/axios": "^0.14.0",
     "@types/eslint": "^8.56.10",
