@@ -31,9 +31,6 @@ jobs:
       - name: Build project
         run: yarn build
 
-      - name: Obfuscate JavaScript files
-        run: node obfuscate.js
-
       - name: Authenticate with npm
         run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_AUTH_TOKEN }}" > ~/.npmrc
 
