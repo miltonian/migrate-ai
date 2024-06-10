@@ -13,5 +13,5 @@ web_modules
 
 # TypeScript cache
 *.tsbuildinfo\
-.celp-ai
+.migrate-ai
 .DS_Store

@@ -1,59 +1,110 @@
-# celp-cli
+# migrate.ai
 
-`celp-cli` is a command-line tool designed to help developers generate unit tests for their Node.js projects. It uses AI to assist in creating meaningful and effective tests based on the code and git diffs.
+`migrate.ai` is a command-line tool designed to assist in the migration of JavaScript projects to TypeScript and Vue 2 projects to Vue 3 using OpenAI's powerful language models. This tool helps developers by automating the code migration process, reducing manual effort, and ensuring code consistency.
+
+## Features
+
+- **JavaScript to TypeScript Migration**: Automatically convert your JavaScript files to TypeScript.
+- **Vue 2 to Vue 3 Migration**: Automatically convert your Vue 2 components to Vue 3.
+- **Customizable Configuration**: Easily configure which files to include or exclude from the migration process.
+- **Git Integration**: Automatically handles gitignore modifications and ensures clean migration.
+- **OpenAI Integration**: Leverages OpenAI's language models to provide accurate and efficient code transformations.
 
 ## Installation
 
-To install `celp-cli`, run the following command:
+To install `migrate.ai`, use npm:
 
 ```sh
-npm install -g @celp/celp-cli
+npm install -g @celp/migrate-ai
 ```
 
-This script will download the latest version of celp-cli and install it to /usr/local/bin.
-Usage
-Check Version
+## Usage
 
-To check the installed version of celp-cli, run:
+After installation, you can use the following commands to perform migrations:
+
+### JavaScript to TypeScript Migration
+
+To migrate JavaScript files to TypeScript, run:
 
 ```sh
-celp-cli --version
+migrate-ai javascriptToTypescript
 ```
 
-## Generate Unit Tests
+### Vue 2 to Vue 3 Migration
 
-To generate unit tests, navigate to your project directory and run:
+To migrate Vue 2 components to Vue 3, run:
 
 ```sh
-celp-cli writeTests
+migrate-ai vue2ToVue3
 ```
 
-This command will analyze your code and generate unit tests based on the identified changes and existing code structure.
+### Prompt A Custom Migration
 
-## Commands
+You can also give it your own prompt to run whatever migration you want, run:
 
-    celp-cli --version: Displays the current version of celp-cli.
-    celp-cli writeTests: Generates unit tests for your project.
+```sh
+migrate-ai migrateWithPrompt
+```
 
-## Documentation
+## Configuration
 
-For detailed documentation, visit the Wiki.
+The tool uses a configuration file located at `.migrate-ai/.cache/.config.json` in your project root to store and retrieve API keys and other settings.
+
+### Ensuring OpenAI API Key
+
+If the OpenAI API key is not present, the tool will prompt you to enter it. The key will be saved in the configuration file for future use.
+
+## How It Works
+
+1. **Setup Environment**: The tool resets token counts and modifies the `.gitignore` file to include `.migrate-ai`.
+2. **API Key Validation**: Ensures that an OpenAI API key is present. If not, it prompts the user to enter one.
+3. **Assistant Creation**: Creates or retrieves an OpenAI assistant to handle the migration process.
+4. **File Processing**: Identifies files to include or exclude from the migration based on user configuration.
+5. **Migration**: Processes each file, applies necessary transformations, and fixes any errors.
+6. **Completion Message**: Displays a summary of the changes made to the codebase.
+
+## Example
+
+To migrate a Vue 2 project to Vue 3:
+
+```sh
+migrate-ai vue2ToVue3
+```
+
+To migrate a JavaScript project to TypeScript:
+
+```sh
+migrate-ai javascriptToTypescript
+```
+
+## Development
+
+### Running Locally
+
+To run the tool locally for development purposes:
+
+1. Clone the repository.
+2. Install the dependencies using `npm install`.
+3. Run the tool using `node path/to/cli.js [command]`.
+
+### Example:
+
+```sh
+node /path/to/cli.js vue2ToVue3
+```
 
 ## Troubleshooting
 
-Common Issues
+### Common Issues
 
-    Permission Denied: Ensure you have the necessary permissions to install to /usr/local/bin. You may need to run the install script with sudo.
-    Unsupported OS/Architecture: Currently, celp-cli supports Linux x86_64 and macOS. Ensure your system meets these requirements.
+- **Workspace Not Found**: Ensure you are running the tool from the root directory of your project.
+- **API Key Errors**: Make sure your OpenAI API key is correctly entered and valid.
+- **File Not Found**: Verify that the files to be migrated exist and the correct file extensions are specified in the configuration.
 
-## Reporting Issues
+## Contributions
 
-If you encounter any issues or have suggestions for improvements, please open an issue.
-
-## Contributing
-
-We welcome contributions! Please see our Contributing Guide for more details.
+Contributions are welcome! Please submit a pull request or open an issue to discuss any changes or improvements.
 
 ## License
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

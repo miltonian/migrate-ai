@@ -1,51 +1,40 @@
 #! /usr/bin/env node
 
-import { TSESTree } from "@typescript-eslint/types";
-import { parse } from "@typescript-eslint/typescript-estree";
 import { Command } from "commander";
-import * as fg from "fast-glob";
 import * as fs from "fs";
-import { v4 as uuidv4 } from "uuid";
-
-import axios from "axios";
-import { execSync } from "child_process";
-import * as path from "path";
 import { v4 } from "uuid";
+
+import * as path from "path";
+import { replaceAllCodeInFile } from "./existingFile.utils";
 import {
   createAndStoreAssistant,
   deleteThreadIdFile,
-  getAssistantIdFromSelectedCode,
+  getAssistantIdFromPrompt,
   initializeClient,
   sendMessageToAssistant,
 } from "./openai-utils";
 import {
-  TOKEN_MAX_LENGTH,
-  TestSummary,
   addToGitignore,
-  executeGitCommand,
-  extractCodeAndReferences,
-  getGeneratedTestSummary,
-  resetTokenCount,
-  writeTestsInExistingFile,
-  writeTestsToNewFile,
+  fixErrorsInCodeAndOverwriteFile,
+  generateInsertionCode,
+  minimizeCode,
+  unminimizeCodeFromFile,
 } from "./utils";
-import inquirer = require("inquirer");
+
 import chalk = require("chalk");
 import ora = require("ora");
 
 const Inquirer = import("inquirer");
-// import inquirer from "inquirer";
+const stripJsonComments = import("strip-json-comments");
 
-// Declare a variable for the LanguageClient instance
-// let client: LanguageClient;
+export let migratePrompt = ``;
+
 export let selectedCode: string = "";
 export let selectedCodeWithoutReferences: string = "";
 export let currentGitDiff: string = "";
 export let fromHighlightedCode = false;
-// export let progressBar: cliProgress.SingleBar;
+
 export let mainBranch: "main" | "master" = "main";
-// export let editorSelection: vscode.Selection | null = null;
-// export let textEditor: vscode.TextEditor | undefined;
 
 interface GithubRepoPreConfig {
   prNumber: number;
@@ -62,46 +51,6 @@ let preConfig: GithubRepoPreConfig | null = null;
  * @param context - The context provided by VS Code, used for managing lifecycle and state.
  */
 export function activate() {
-  // Register a command that will be called when the extension's command is invoked
-  //   let disposable = vscode.commands.registerCommand(
-  //     "extension.writeTests",
-  //     () => {
-  //       preConfig = null;
-  //       handleCommand(context);
-  //     }
-  //   );
-  //   const program = new Command();
-
-  //   program
-  //     .command("writeTests")
-  //     .description("Generate tests from selection")
-  //     .action(() => {
-  //       preConfig = null;
-  //       handleCommand();
-  //     });
-
-  //   program.parse(process.argv);
-  //   let disposable2 = vscode.commands.registerCommand(
-  //     "extension.generateUnitTestsFromDiff",
-  //     (args: Partial<GithubRepoPreConfig>) => {
-  //       preConfig = null;
-  //       // handleCommand(context)
-  //       if (
-  //         args &&
-  //         args.openAiKey &&
-  //         args.prNumber &&
-  //         args.repo &&
-  //         args.owner &&
-  //         args.githubToken &&
-  //         args.branch
-  //       ) {
-  //         preConfig = args as GithubRepoPreConfig;
-  //         highlightAndOpenChangedFiles(context, preConfig);
-  //       } else {
-  //         highlightAndOpenChangedFiles(context);
-  //       }
-  //     }
-  //   );
   const program = new Command();
 
   // Retrieve version from package.json
@@ -113,17 +62,26 @@ export function activate() {
   program.version(version, "-v, --version", "Output the current version");
 
   program
-    .command("writeTests")
-    .description("Generate tests from git diff")
-    .action(() => {
-      highlightAndOpenChangedFiles();
-      // console.log("testing");
-      // // const errors = getTypeErrors(
-      // //   "/Users/alexanderhamilton/Programming/empowerlocal/empowerlocal-backend-node/src/routes/publications.test.ts"
-      // // );
-      // const errors = await runLocalTests();
-      // // console.log(errors);
-      // return;
+    .command("vue2ToVue3")
+    .description("Migrate Vue 2 to Vue 3")
+    .action(async () => {
+      migrateWithPrompt(`here is a vue 2 file. please migrate this to vue 3`);
+    });
+
+  program
+    .command("javascriptToTypescript")
+    .description("Migrate Javscript to Typescript")
+    .action(async () => {
+      migrateWithPrompt(
+        `here is a javascript file. please migrate this to typescript`
+      );
+    });
+
+  program
+    .command("migrateWithPrompt <prompt>")
+    .description("Migrate code using a custom prompt")
+    .action(async (prompt: string) => {
+      migrateWithPrompt(prompt);
     });
 
   program.parse(process.argv);
@@ -134,39 +92,13 @@ export function activate() {
  * @param context - The extension context.
  */
 async function setupEnvironment() {
-  resetTokenCount();
-  await addToGitignore(".celp-ai");
+  await addToGitignore(".migrate-ai");
   await deleteThreadIdFile();
-  // await deleteAssistantIdFile();
 }
-
-const addSelectedCodeWithRefToAIContext = async (
-  filePath: string,
-  selectedCode: string
-) => {
-  const identifiableTokens = [selectedCode.slice(0, TOKEN_MAX_LENGTH)];
-
-  const codeWithReferences = await extractCodeAndReferences(
-    [filePath],
-    identifiableTokens,
-    3
-  );
-
-  const workspaceRoot = process.cwd();
-  if (!workspaceRoot) {
-    return;
-  }
-
-  console.info(`adding code from ${filePath} to context`);
-
-  await sendMessageToAssistant(
-    `use this for context. await my further instructions ${codeWithReferences}`
-  );
-};
 
 export const CONFIG_PATH = path.join(
   process.cwd(),
-  ".celp-ai",
+  ".migrate-ai",
   ".cache",
   ".config.json"
 );
@@ -197,7 +129,6 @@ async function ensureApiKey(): Promise<string | undefined> {
   let openaiApiKey = config.openaiApiKey;
 
   if (!openaiApiKey) {
-    // const inquirer = await import("inquirer");
     const response = await (
       await Inquirer
     ).prompt([
@@ -220,388 +151,12 @@ async function ensureApiKey(): Promise<string | undefined> {
 
   return openaiApiKey;
 }
-/**
- * Retrieves the GitHub token from the VSCode settings, or prompts the user to enter it if not already stored.
- *
- * @returns {Promise<string>} The GitHub token.
- */
-async function ensureGithubToken(): Promise<string | undefined> {
-  if (preConfig?.githubToken) {
-    return preConfig.githubToken;
-  }
 
-  const config = getConfig();
-  let githubToken = config.githubToken;
+async function migrateWithPrompt(_migratePrompt: string) {
+  migratePrompt = _migratePrompt;
 
-  if (!githubToken) {
-    const response = await (
-      await Inquirer
-    ).prompt([
-      {
-        type: "input",
-        name: "githubToken",
-        message: "Enter your Github Token",
-      },
-    ]);
+  let spinner: ora.Ora | null = null;
 
-    githubToken = response.githubToken;
-
-    if (!githubToken) {
-      console.log("githubToken is required!");
-      return undefined;
-    }
-
-    setConfig("githubToken", githubToken);
-  }
-
-  return githubToken;
-}
-// export const ensureGithubToken = async (): Promise<string> => {
-//   if (preConfig?.githubToken) {
-//     return preConfig.githubToken;
-//   }
-//   const configuration = vscode.workspace.getConfiguration("celp");
-//   let token = configuration.get<string>("githubToken");
-
-//   if (!token) {
-//     // Prompt user for GitHub token
-//     token = await vscode.window.showInputBox({
-//       prompt: "Enter your GitHub Token",
-//       placeHolder: "Token",
-//       ignoreFocusOut: true,
-//       password: true, // This makes the input more secure
-//     });
-
-//     if (token) {
-//       // Save the token to settings
-//       await configuration.update(
-//         "githubToken",
-//         token,
-//         vscode.ConfigurationTarget.Workspace
-//       );
-//       console.info("GitHub token saved.");
-//     } else {
-//       console.error("GitHub token is required.");
-//       throw new Error("GitHub token is required.");
-//     }
-//   }
-
-//   return token;
-// };
-/**
- * Retrieves the repo from the preconfig, or prompts the user to enter it if not already stored.
- *
- * @returns {Promise<string>} The Repo.
- */
-async function ensureRepo(): Promise<string | undefined> {
-  if (preConfig?.repo) {
-    return preConfig.repo;
-  }
-
-  const config = getConfig();
-  let repo = config.repo;
-
-  if (!repo) {
-    const response = await (
-      await Inquirer
-    ).prompt([
-      {
-        type: "input",
-        name: "repo",
-        message:
-          "Enter your Repo owner and name like {owner}/{repo} (e.g. organization-name/repo-name)",
-      },
-    ]);
-
-    repo = response.repo;
-
-    if (!repo) {
-      console.log("repo is required!");
-      return undefined;
-    }
-
-    setConfig("repo", repo);
-  }
-
-  return repo;
-}
-// export const ensureRepo = async (): Promise<string> => {
-//   if (preConfig?.repo) {
-//     return preConfig.repo;
-//   }
-//   const configuration = vscode.workspace.getConfiguration("celp");
-//   let repo = configuration.get<string>("repo");
-
-//   if (!repo) {
-//     // Prompt user for GitHub repo
-//     repo = await vscode.window.showInputBox({
-//       prompt:
-//         "Enter your Repo owner and name like {owner}/{repo} (e.g. organization-name/repo-name)",
-//       placeHolder: "Github repo {owner}/{repo}",
-//       ignoreFocusOut: true,
-//     });
-
-//     if (repo) {
-//       // Save the repo to settings
-//       await configuration.update(
-//         "repo",
-//         repo,
-//         vscode.ConfigurationTarget.Workspace
-//       );
-//       console.info("Repo saved.");
-//     } else {
-//       console.error("Repo is required.");
-//       throw new Error("Repo is required.");
-//     }
-//   }
-
-//   return repo;
-// };
-
-// export const promptForPRNumber = async (): Promise<number> => {
-//   // Prompt user for GitHub PR number
-//   const prNumber = await vscode.window.showInputBox({
-//     prompt: "Enter the PR Number you'd like to review",
-//     placeHolder: "e.g. 123",
-//     ignoreFocusOut: true,
-//     validateInput: (value) => {
-//       // Check if the input is a valid number
-//       return isNaN(Number(value)) ? "Please enter a valid number" : null;
-//     },
-//   });
-
-//   if (!prNumber) {
-//     console.error("PR Number is required.");
-//     throw new Error("PR Number is required.");
-//   }
-
-//   return Number(prNumber);
-// };
-// export const promptForOpenAIAPIKey = async (): Promise<string> => {
-//   const token = await vscode.window.showInputBox({
-//     prompt: "Enter your OpenAI API Key",
-//     placeHolder: "OpenAI API Key",
-//     ignoreFocusOut: true,
-//     password: true,
-//   });
-
-//   if (!token) {
-//     console.error("OpenAI API Key is required.");
-//     throw new Error("OpenAI API Key is required.");
-//   }
-
-//   return token;
-// };
-// export const promptForGitHubToken = async (): Promise<string> => {
-//   const token = await vscode.window.showInputBox({
-//     prompt: "Enter your GH Token",
-//     placeHolder: "Github Token",
-//     ignoreFocusOut: true,
-//     password: true,
-//   });
-
-//   if (!token) {
-//     console.error("GH Token is required.");
-//     throw new Error("GH Token is required.");
-//   }
-
-//   return token;
-// };
-// export const promptForRepo = async (): Promise<string> => {
-//   const repo = await vscode.window.showInputBox({
-//     prompt: "Enter your Github Repo like this: owner/repo",
-//     placeHolder: "{owner}/{repo}",
-//     ignoreFocusOut: true,
-//   });
-
-//   if (!repo) {
-//     console.error("Repo is required.");
-//     throw new Error("Repo is required.");
-//   }
-
-//   return repo;
-// };
-
-/**
- * Prompts the user to select an action for handling test files.
- * @returns A string representing the user's choice or undefined if no choice is made.
- */
-// async function promptFileAction(): Promise<string | undefined> {
-//   return vscode.window.showQuickPick(
-//     [
-//       "Create new test file (will prompt you to select an existing test file to use for context)",
-//       "Select existing test file",
-//     ],
-//     {
-//       placeHolder:
-//         "Do you want to create a new test file or select an existing one?",
-//     }
-//   );
-// }
-
-/**
- * Handles the workflow when an existing test file is selected.
- * @param editor - The active text editor.
- * @param context - The extension context.
- */
-async function handleExistingTestFile(autoFilePath: string) {
-  await writeTestsInExistingFile(autoFilePath);
-}
-
-/**
- * Handles the workflow when creating a new test file based on context from another file.
- * @param editor - The active text editor.
- * @param context - The extension context.
- */
-async function handleNewTestFile(
-  filePath: string,
-  autoContextTestFile: string
-) {
-  const newTestFileName = await generateTestFileName(filePath);
-  if (!newTestFileName) {
-    throw new Error("Could not generate new test file name");
-  }
-  //   console.log({ newTestFileName });
-  await writeTestsToNewFile(filePath, autoContextTestFile, newTestFileName);
-}
-
-/**
- * Recursively finds the smallest enclosing AST node that contains the given position.
- *
- * @param {TSESTree.Node} node - The current AST node being checked.
- * @param {number} position - The position within the document to find the enclosing node for.
- * @returns {TSESTree.Node | null} The smallest enclosing node that contains the position, or null if not found.
- */
-function findEnclosingNode(
-  node: TSESTree.Node,
-  position: number
-): TSESTree.Node | null {
-  // Base case: if the position is outside the range of the node, return null
-  if (!node.range || position < node.range[0] || position > node.range[1]) {
-    return null;
-  }
-
-  // Recursive case: traverse child nodes based on node type
-  let result: TSESTree.Node | null = null;
-
-  /**
-   * Helper function to check the children of the current node.
-   *
-   * @param {TSESTree.Node[]} children - The child nodes to check.
-   */
-  const checkChildren = (children: TSESTree.Node[]) => {
-    for (const child of children) {
-      const childResult = findEnclosingNode(child, position);
-      if (childResult) {
-        result = childResult;
-        break;
-      }
-    }
-  };
-
-  switch (node.type) {
-    /**
-     * Program node: The root of the AST. Contains all other nodes.
-     * @example
-     * const code = `function foo() {}`;
-     * const ast = parse(code);
-     * console.log(ast.type); // "Program"
-     */
-    case "Program":
-      checkChildren(node.body);
-      break;
-    /**
-     * BlockStatement node: A block of statements enclosed by curly braces.
-     * @example
-     * const code = `{ let x = 10; }`;
-     * const ast = parse(code);
-     * console.log(ast.body[0].type); // "BlockStatement"
-     */
-    case "BlockStatement":
-      checkChildren(node.body);
-      break;
-    /**
-     * FunctionDeclaration node: A function declaration statement.
-     * @example
-     * const code = `function foo() {}`;
-     * const ast = parse(code);
-     * console.log(ast.body[0].type); // "FunctionDeclaration"
-     */
-    case "FunctionDeclaration":
-    /**
-     * FunctionExpression node: A function expression.
-     * @example
-     * const code = `const foo = function() {};`;
-     * const ast = parse(code);
-     * console.log(ast.body[0].declarations[0].init.type); // "FunctionExpression"
-     */
-    case "FunctionExpression":
-    /**
-     * ArrowFunctionExpression node: An arrow function expression.
-     * @example
-     * const code = `const foo = () => {};`;
-     * const ast = parse(code);
-     * console.log(ast.body[0].declarations[0].init.type); // "ArrowFunctionExpression"
-     */
-    case "ArrowFunctionExpression":
-      if (node.body.type === "BlockStatement") {
-        checkChildren(node.body.body);
-      }
-      break;
-    /**
-     * IfStatement node: An if statement.
-     * @example
-     * const code = `if (true) {}`;
-     * const ast = parse(code);
-     * console.log(ast.body[0].type); // "IfStatement"
-     */
-    case "IfStatement":
-      if (node.consequent) {
-        checkChildren([node.consequent]);
-      }
-      if (node.alternate) {
-        checkChildren([node.alternate]);
-      }
-      break;
-    /**
-     * ExportNamedDeclaration node: An export named declaration.
-     * @example
-     * const code = `export function foo() {}`;
-     * const ast = parse(code);
-     * console.log(ast.body[0].type); // "ExportNamedDeclaration"
-     */
-    case "ExportNamedDeclaration":
-      if (node.declaration) {
-        checkChildren([node.declaration]);
-      }
-      break;
-    /**
-     * ClassDeclaration node: A class declaration.
-     * @example
-     * const code = `class MyClass { constructor() {} }`;
-     * const ast = parse(code);
-     * console.log(ast.body[0].type); // "ClassDeclaration"
-     */
-    case "ClassDeclaration":
-      if (node.body.type === "ClassBody") {
-        checkChildren(node.body.body);
-      }
-      break;
-    // Add other cases as needed based on the types of nodes you expect to handle
-  }
-
-  // Return the smallest node that includes the position
-  return result || node;
-}
-
-async function highlightAndOpenChangedFiles(
-  //   context: vscode.ExtensionContext,
-  args?: GithubRepoPreConfig,
-  promptEverything?: boolean
-) {
-  const spinner = ora("Processing diff and generating tests...").start();
-  resetTokenCount();
-  //   const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
   const workspaceFolder = process.cwd();
 
   if (!workspaceFolder) {
@@ -610,10 +165,10 @@ async function highlightAndOpenChangedFiles(
     return;
   }
 
-  const celpCacheDir = path.join(workspaceFolder, ".celp-ai/.cache");
+  const celpCacheDir = path.join(workspaceFolder, ".migrate-ai/.cache");
   const threadIdFile = path.join(celpCacheDir, "thread_id");
 
-  // Ensure the .celp-ai/.cache directory exists
+  // Ensure the .migrate-ai/.cache directory exists
   if (!fs.existsSync(celpCacheDir)) {
     fs.mkdirSync(celpCacheDir, { recursive: true });
   }
@@ -623,925 +178,156 @@ async function highlightAndOpenChangedFiles(
     fs.writeFileSync(threadIdFile, "");
   }
 
-  // progressBar = new cliProgress.SingleBar({
-  //   // format: 'CLI Progress |' + colors.cyan('{bar}') + '| {percentage}% || {value}/{total} Chunks || Speed: {speed}',
-  //   barCompleteChar: "\u2588",
-  //   barIncompleteChar: "\u2591",
-  //   hideCursor: true,
-  // });
-  //   progressBar.start(100, 0);
-
   const startTime = Date.now();
 
   // Fetch initial code coverage
-  // testSummary.initialCoverage = getCurrentCodeCoverage();
   try {
-    const userId = ensureUserId();
-    const runId = await sendRunStartRequest(userId);
-    // progressBar.update(5);
     await setupEnvironment();
-
-    // Update the global state with the currently used AI model
-    //   const aiModel = "GPT-4";
-    //   context.globalState.update("aiModel", aiModel);
-
-    // Ensure a valid API key is available
     const openaiApiKey = await ensureApiKey();
-    // progressBar.start(100, 0);
-    // progressBar.update(5);
-    // args?.openAiKey //|| promptEverything
-    //   ? await promptForOpenAIAPIKey()
-    //   :
-    //   await ensureApiKey();
     if (!openaiApiKey) {
       console.error("no open ai api key found");
       return;
     }
-
-    // const githubToken = await ensureGithubToken();
-    // progressBar.update(8);
-    // args?.githubToken //|| promptEverything
-    //   ? await promptForGitHubToken()
-    //   :
-    // await ensureGithubToken();
-    // if (!githubToken) return;
-
-    // const repo = await ensureRepo();
-    // progressBar.update(9);
-    // args?.repo && //|| promptEverything
-    //   ? await promptForRepo()
-    //   :
-
-    // if (!repo) return;
-
-    // Initialize the OpenAI client with the API key
     await initializeClient(openaiApiKey);
-    // progressBar.update(10);
 
-    const summaries: TestSummary[] = [];
+    const existingAssistantForThisCode =
+      await getAssistantIdFromPrompt(migratePrompt);
+    console.log({ existingAssistantForThisCode });
 
-    const changedFiles = (await getChangedFiles(workspaceFolder)).filter(
-      (f) => {
-        const isValidFile =
-          f.endsWith(".ts") &&
-          !f.endsWith(".d.ts") &&
-          !f.includes(".test.") &&
-          !f.includes(".spec.") &&
-          !f.includes("jest.config.ts") &&
-          !f.includes("tsconfig.json") &&
-          !f.includes("webpack.config.js") &&
-          !f.includes("babel.config.js") &&
-          !f.includes("eslint") &&
-          !f.includes("prettier") &&
-          !f.includes(".env") &&
-          !f.includes("README.md") &&
-          !f.includes("CHANGELOG.md") &&
-          !f.includes("package.json") &&
-          !f.includes("package-lock.json") &&
-          !f.includes("yarn.lock") &&
-          !f.includes("build/") &&
-          !f.includes("dist/") &&
-          !f.includes("out/");
-        return isValidFile;
-      }
-    );
-    let allSnippets: string[] = [];
-    console.log(`changed files: ${changedFiles}`);
-    let i = 0;
-    for (const file of changedFiles) {
-      try {
-        console.log(`---`);
-        console.log(`Starting to generate tests for ${file}`);
-        // progressBar.update(15);
-        const snippets = await collectAndDisplaySnippets(file, workspaceFolder);
-
-        selectedCode = snippets?.codeWithReferences.join("") || "";
-        selectedCodeWithoutReferences =
-          snippets?.codeWithoutReferences.join("") || "";
-        currentGitDiff = snippets?.gitDiff || "";
-        //   console.log({
-        //     snippets,
-        //     currentGitDiff,
-        //     selectedCodeWithoutReferences,
-        //     selectedCodeWithoutReferencesstring: JSON.stringify(
-        //       selectedCodeWithoutReferences
-        //     ),
-        //   });
-
-        if (!selectedCode) {
-          //   console.info(
-          //     `Code has not changed in ${file}, skipping...`
-          //   );
-          console.info(`Code has not changed in ${file}, skipping...`);
-          continue;
-        }
-
-        // progressBar.update(20);
-        const existingAssistantForThisCode =
-          await getAssistantIdFromSelectedCode(selectedCodeWithoutReferences);
-        let isExistingAssistant = false;
-
-        if (!existingAssistantForThisCode) {
-          await createAndStoreAssistant(
-            `celp-${v4()}`,
-            selectedCodeWithoutReferences
-          );
-        } else {
-          isExistingAssistant = true;
-        }
-        // const workspaceRoot =
-        //   vscode.workspace.workspaceFolders?.[0].uri.fsPath;
-        const workspaceRoot = process.cwd();
-        const fullPath = path.join(workspaceRoot || "", file);
-        if (!isExistingAssistant) {
-          // progressBar.update(25);
-          // ADD TO CONTEXT: selected code with references
-          await addSelectedCodeWithRefToAIContext(fullPath, selectedCode);
-
-          // ADD TO CONTEXT: selected code with references
-          // await addCodeThatReferencesHighlightedToAIContext(context, fullPath, snippets.join(''));
-        }
-
-        // progressBar.update(25);
-        const foundTestFile = await findTestFilePath(file);
-
-        if (foundTestFile) {
-          // progressBar.update(30);
-          // await openFilesInEditor([foundTestFile]);
-          await handleExistingTestFile(foundTestFile);
-        } else {
-          // progressBar.update(30);
-          const foundTestFile = await findFirstTestFile(fullPath);
-          if (!foundTestFile) {
-            throw new Error("Could not find test file");
-          }
-          await handleNewTestFile(fullPath, foundTestFile);
-        }
-        allSnippets = allSnippets.concat(
-          `${
-            foundTestFile
-              ? `will put tests in ${foundTestFile}`
-              : `will create new test file`
-          } | ${snippets}`
-        );
-
-        const summary = await getGeneratedTestSummary();
-        summary && summaries.push(summary);
-      } catch (error) {
-        console.error(error);
-      }
-      i++;
+    if (!existingAssistantForThisCode) {
+      await createAndStoreAssistant(`migrate-ai-${v4()}`, migratePrompt);
     }
 
-    // const separator = "____________________________";
-    // const snippetsText = allSnippets.join(`\n${separator}\n`);
-    // const newDocument = await vscode.workspace.openTextDocument({
-    //   content: snippetsText,
-    //   language: "text",
-    // });
-    // await vscode.window.showTextDocument(newDocument, { preview: false });
-    // progressBar.stop();
-    spinner.text = "Tests have been generated, finishing up...";
-    const generationTime = (Date.now() - startTime) / 1000; // Time in seconds
-    // execSync("npm test", { stdio: "inherit" });
-    // Fetch final code coverage
-    // testSummary.finalCoverage = getCurrentCodeCoverage();
-    // testSummary.coverageIncrease =
-    // testSummary.finalCoverage - testSummary.initialCoverage;
+    spinner = ora("Migrating...").start();
 
-    spinner.succeed("Tests generated successfully!");
+    const projectRoot = process.cwd();
+    await processFiles(projectRoot);
 
-    const summary: TestSummary = {
-      tests: summaries.flatMap((s) => s.tests, 0),
-      generationTime,
-    };
-    runId &&
-      summary &&
-      (await sendTestSummaryRequest(runId, { ...summary, generationTime }));
-
-    summary && (await printCompletionMessage({ ...summary, generationTime }));
-    // runId &&
-    //   summary &&
-    //   (await sendTestSummaryRequest(runId, {
-    //     ...summary,
-    //     generationTime,
-    //     feedback: feedbackResp?.feedback || undefined,
-    //   }));
+    spinner.succeed("Code migrated successfully!");
   } catch (err: any) {
     console.error("Failed to process and display snippets:", err);
-    //   console.error(
-    //     "Error processing snippets: " + err.message
-    //   );
+
     console.error("Error processing snippets: " + err.message);
-    spinner.fail("Failed to generate tests.");
+    spinner?.fail("Failed to migrate.");
     console.error(chalk.red(`Error: ${err.message}`));
   }
 }
 
-function getCurrentCodeCoverage() {
-  // Run nyc to generate the coverage report
-  execSync("nyc report --reporter=json-summary", { stdio: "inherit" });
-
-  // Read and parse the coverage summary report
-  const coverageSummary = JSON.parse(
-    fs.readFileSync("./coverage/coverage-summary.json", "utf-8")
-  );
-  return coverageSummary.total.lines.pct;
-}
-
-async function printCompletionMessage(testSummary: TestSummary) {
-  const message = `
-${chalk.green.bold("Success!")}
-${chalk.cyan("The following tests were generated:")}
-`;
-
-  console.log(message);
-
-  testSummary.tests.forEach((test) => {
-    console.log(
-      `${chalk.green("✔")} ${chalk.bold(test.testTitles)} ${chalk.dim(
-        "in"
-      )} ${chalk.blue(test.path)}`
-    );
-    console.log(`  ${chalk.gray(test.description)}\n`);
-  });
-
-  const benchmarks = `
-${chalk.yellow.bold("Benchmarks:")}
-${chalk.green("⏱")} ${chalk.cyan.bold(
-    "Generation Time:"
-  )} ${testSummary?.generationTime?.toFixed(2)} seconds.
-${chalk.green("📈")} ${chalk.cyan.bold("Tests Generated:")} ${
-    testSummary.tests.length
-  } tests.
-  `;
-  // ${chalk.green("📈")} ${chalk.cyan.bold(
-  //     "Initial Code Coverage:"
-  //   )} ${testSummary.initialCoverage.toFixed(2)}%.
-  // ${chalk.green("📈")} ${chalk.cyan.bold(
-  //     "Final Code Coverage:"
-  //   )} ${testSummary.finalCoverage.toFixed(2)}%.
-  // ${chalk.green("📈")} ${chalk.cyan.bold(
-  //     "Coverage Increase:"
-  //   )} ${testSummary.coverageIncrease.toFixed(2)}%.
-
-  console.log(benchmarks);
-
-  const nextSteps = `
-${chalk.yellow.bold("Next Steps:")}
-1. ${chalk.magenta.bold("Run your tests:")} Use ${chalk.green.bold(
-    "npm test"
-  )} or ${chalk.green.bold("yarn test")} to run the generated tests.
-2. ${chalk.magenta.bold(
-    "Review the tests:"
-  )} Check the generated tests to ensure they cover all necessary scenarios.
-3. ${chalk.magenta.bold(
-    "Integrate changes:"
-  )} Commit the generated tests and ensure they are included in your CI/CD pipeline.
-4. ${chalk.magenta.bold(
-    "Remove code for exclusive tests:"
-  )} There may be code in these generated tests that indicate only specific tests should run (e.g. describe.only). You should remove these before committing.
-
-  `;
-  // ${chalk.yellow.bold("For more information, visit our documentation:")}
-  // ${chalk.blue.bold.underline("https://your-documentation-url.com")}
-
-  console.log(nextSteps);
-
-  // const feedbackQuestion = [
-  //   {
-  //     type: "confirm",
-  //     name: "provideFeedback",
-  //     message: "Would you like to provide feedback?",
-  //     default: false,
-  //   },
-  // ];
-
-  // const { provideFeedback } = await inquirer.prompt(feedbackQuestion);
-
-  // if (provideFeedback) {
-  //   const feedbackPrompt = [
-  //     {
-  //       type: "input",
-  //       name: "feedback",
-  //       message: "Please provide your feedback:",
-  //     },
-  //   ];
-
-  //   const { feedback } = (await inquirer.prompt(feedbackPrompt)) as {
-  //     feedback: string | undefined | null;
-  //   };
-  //   console.log(chalk.green("Thank you for your feedback!"));
-  //   // Here you would send the feedback to your server or save it
-  //   return { feedback };
-  return null;
-  // }
-}
-//   );
-// }
-
-// /**
-//  * Finds the first test file in the project that matches the given test patterns within the specified directories relative to the source file's directory.
-//  *
-//  * @param sourceFilePath The full path to the source file for which tests are being sought.
-//  * @returns A Promise that resolves to the path of the first matching test file, or null if no match is found.
-//  */
-// async function findFirstTestFile(
-//   sourceFilePath: string
-// ): Promise<string | null> {
-//   // Get configuration settings
-//   const config = vscode.workspace.getConfiguration("celp");
-//   const testPatterns = config.get<string[]>("testPatterns") || [];
-//   const testDirs = config.get<string[]>("testDirectoryNames") || [];
-
-//   const sourceFileDir = path.dirname(sourceFilePath);
-
-//   // Iterate over each test directory configured
-//   for (const testDir of testDirs) {
-//     const testDirPath = path.join(sourceFileDir, testDir); // Compute potential test directory path
-
-//     for (const pattern of testPatterns) {
-//       // Construct the full search pattern for the files
-//       const searchPattern = new vscode.RelativePattern(
-//         testDirPath,
-//         `${pattern}`
-//       );
-
-//       try {
-//         // Search for files matching the pattern in the computed directory
-//         const files = await vscode.workspace.findFiles(searchPattern, null, 1); // Limit to 1 to find the first match quickly
-//         if (files.length > 0) {
-//           return files[0].fsPath; // Return the path of the first matching file found
-//         }
-//       } catch (error) {
-//         // Log errors related to file searching
-//         console.error(
-//           `Error searching files in directory ${testDirPath} with pattern ${pattern}: ${error}`
-//         );
-//       }
-//     }
-//   }
-
-//   // Return null if no matching test files are found after all attempts
-//   return null;
-// }
+let includeExcludeJson: {
+  fileExtensionsToInclude: string[];
+  substringsPathsOrExtensionsToExclude: string[];
+} | null = null;
 
 /**
- * Finds the first test file in the project that matches the given test patterns within the specified directories relative to the source file's directory.
- *
- * @param sourceFilePath The full path to the source file for which tests are being sought.
- * @param testPatterns An array of test file patterns to match.
- * @param testDirs An array of directory names that typically contain test files.
- * @returns A Promise that resolves to the path of the first matching test file, or null if no match is found.
+ * Recursively find all target files in a directory.
+ * @param dir The directory to search.
+ * @param filelist The list of files found.
+ * @returns An array of file paths.
  */
-async function findFirstTestFile(
-  sourceFilePath: string,
-  testPatterns: string[] = ["*.spec.ts", "*.test.ts"],
-  testDirs: string[] = ["", "__tests__", "tests"]
-): Promise<string | null> {
-  const sourceFileDir = path.dirname(sourceFilePath);
-
-  // Iterate over each test directory configured
-  for (const testDir of testDirs) {
-    const testDirPath = path.join(sourceFileDir, testDir); // Compute potential test directory path
-
-    for (const pattern of testPatterns) {
-      // Construct the full search pattern for the files
-      const searchPattern = path.join(testDirPath, pattern);
-
-      try {
-        // Search for files matching the pattern in the computed directory
-        const files = await fg(searchPattern, { onlyFiles: true }); // Use fast-glob to find files matching the pattern
-        if (files.length > 0) {
-          return files[0]; // Return the path of the first matching file found
-        } else {
-          for (const pattern of testPatterns) {
-            // Construct the full search pattern for the files
-            const searchPattern = path.join(
-              path.join(process.cwd(), testDir),
-              pattern
-            );
-
-            try {
-              // Search for files matching the pattern in the computed directory
-              const files = await fg(searchPattern, { onlyFiles: true }); // Use fast-glob to find files matching the pattern
-              if (files.length > 0) {
-                return files[0]; // Return the path of the first matching file found
-              }
-            } catch (error) {
-              // Log errors related to file searching
-              console.error(
-                `Error searching files in directory ${testDirPath} with pattern ${pattern}: ${error}`
-              );
-            }
-          }
-        }
-      } catch (error) {
-        // Log errors related to file searching
-        console.error(
-          `Error searching files in directory ${testDirPath} with pattern ${pattern}: ${error}`
-        );
-      }
-    }
+const findTargetFiles = (dir: string, filelist: string[] = []): string[] => {
+  if (
+    !includeExcludeJson ||
+    !includeExcludeJson?.fileExtensionsToInclude ||
+    !includeExcludeJson?.substringsPathsOrExtensionsToExclude
+  ) {
+    throw new Error("Could not find any files to include or exclude");
   }
 
-  // Return null if no matching test files are found after all attempts
-  return null;
-}
+  const files = fs.readdirSync(dir);
 
-async function getChangedFiles(
-  workingDirectory: string,
-  overrideDiff?: string
-): Promise<string[]> {
-  try {
-    await executeGitCommand("git fetch origin main", workingDirectory); // Try to fetch the main branch
-  } catch (error) {
-    console.warn("Fetching main branch failed, trying master branch.");
-    mainBranch = "master";
-    await executeGitCommand("git fetch origin master", workingDirectory); // Fallback to fetching the master branch
-  }
-
-  const output =
-    overrideDiff ||
-    (await executeGitCommand(
-      `git diff --name-only FETCH_HEAD`,
-      workingDirectory
-    ));
-
-  return output.split("\n").filter((line) => line.length > 0);
-}
-
-// Function to parse git diff and extract changed line numbers
-function parseDiff(diff: string): number[] {
-  const changedLines: number[] = [];
-  const lines = diff.split("\n");
-  let currentLineNumber = 0;
-
-  for (const line of lines) {
-    if (line.startsWith("@@")) {
-      // Extract the starting line number from the hunk header
-      const match = /@@ -\d+,\d+ \+(\d+),/.exec(line);
-      if (match) {
-        currentLineNumber = parseInt(match[1], 10) - 1; // Set the line number to the starting line of the diff hunk
-      }
-    } else if (line.startsWith("+") && !line.startsWith("+++")) {
-      changedLines.push(currentLineNumber);
-    }
-
-    // Increment the current line number for lines in the new file
-    if (!line.startsWith("-") && !line.startsWith("@@")) {
-      currentLineNumber++;
-    }
-  }
-
-  return changedLines;
-}
-
-// export function findEnclosingNodes(
-//   ast: TSESTree.Node,
-//   changedLines: number[],
-//   document: vscode.TextDocument
-// ): TSESTree.Node[] {
-//   const enclosingNodes: TSESTree.Node[] = [];
-//   const nodeSet = new Set<TSESTree.Node>();
-
-//   changedLines.forEach((line) => {
-//     const offset = document.offsetAt(new vscode.Position(line, 0));
-//     const node = findEnclosingNode(ast, offset);
-//     if (
-//       node &&
-//       !nodeSet.has(node) &&
-//       !node.type.includes("Import") &&
-//       node.type !== "Program"
-//     ) {
-//       nodeSet.add(node);
-//       enclosingNodes.push(node);
-//     }
-//   });
-
-//   return enclosingNodes;
-// }
-class Position {
-  constructor(public line: number, public character: number) {}
-}
-
-class TextDocument {
-  private lines: string[];
-
-  constructor(private content: string) {
-    this.lines = content.split("\n");
-  }
-
-  offsetAt(position: Position): number {
-    let offset = 0;
-    for (let i = 0; i < position.line; i++) {
-      offset += this.lines[i].length + 1; // +1 for newline character
-    }
-    return offset + position.character;
-  }
-  getText(range?: { start: Position; end: Position }): string {
-    if (!range) return this.content;
-    const startOffset = this.offsetAt(range.start);
-    const endOffset = this.offsetAt(range.end);
-    return this.content.slice(startOffset, endOffset);
-  }
-}
-
-export function findEnclosingNodes(
-  ast: TSESTree.Node,
-  changedLines: number[],
-  document: TextDocument
-): TSESTree.Node[] {
-  const enclosingNodes: TSESTree.Node[] = [];
-  const nodeSet = new Set<TSESTree.Node>();
-
-  changedLines.forEach((line) => {
-    const offset = document.offsetAt(new Position(line, 0));
-    const node = findEnclosingNode(ast, offset);
-    if (
-      node &&
-      !nodeSet.has(node) &&
-      !node.type.includes("Import") &&
-      node.type !== "Program"
+  for (const file of files) {
+    const filePath = path.join(dir, file);
+    if (fs.statSync(filePath).isDirectory()) {
+      findTargetFiles(filePath, filelist);
+    } else if (
+      includeExcludeJson.fileExtensionsToInclude.some((f) =>
+        filePath.endsWith(f)
+      ) &&
+      includeExcludeJson.substringsPathsOrExtensionsToExclude.every(
+        (f) => !filePath.includes(f)
+      )
     ) {
-      nodeSet.add(node);
-      enclosingNodes.push(node);
+      filelist.push(filePath);
     }
-  });
-
-  return enclosingNodes;
-}
-
-// export async function openFilesInEditor(files: string[]) {
-//   const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
-
-//   if (!workspaceFolder) {
-//     console.error("Workspace not found.");
-//     return;
-//   }
-//   let viewColumn = vscode.ViewColumn.Beside;
-//   for (const file of files) {
-//     const filePath = vscode.Uri.file(path.join(workspaceFolder, file));
-//     try {
-//       const document = await vscode.workspace.openTextDocument(filePath);
-//       await vscode.window.showTextDocument(document, {
-//         preview: false,
-//         viewColumn,
-//       });
-//       viewColumn = vscode.ViewColumn.Beside; // Open next file beside the current one
-//     } catch (error) {
-//       try {
-//         const document = await vscode.workspace.openTextDocument(file);
-//         await vscode.window.showTextDocument(document, {
-//           preview: false,
-//           viewColumn,
-//         });
-//         viewColumn = vscode.ViewColumn.Beside; // Open next file beside the current one
-//       } catch (error) {
-//         console.error(error);
-//       }
-//     }
-//   }
-// }
-
-/**
- * Checks if a branch exists in the local repository.
- *
- * @param branch - The branch name to check.
- * @param workspaceFolder - The folder where the git command should be executed.
- * @returns A promise that resolves to true if the branch exists, false otherwise.
- */
-async function branchExists(
-  branch: string,
-  workspaceFolder: string
-): Promise<boolean> {
-  try {
-    await executeGitCommand(
-      `git rev-parse --verify ${branch}`,
-      workspaceFolder
-    );
-    return true;
-  } catch {
-    return false;
   }
-}
+  return filelist.filter(
+    (f) =>
+      !f.includes("node_modules") &&
+      !f.includes("dist") &&
+      !f.includes("out") &&
+      !f.includes("build")
+  );
+};
 
 /**
- * Gets the local diff of the current branch compared to the local main or master branch for a specific file.
- *
- * @param file - The file for which to get the diff.
- * @param workspaceFolder - The folder where the git command should be executed.
- * @param overrideDiff - Optional parameter to provide a custom diff string.
- * @returns A promise that resolves to the diff string.
+ * Main function to process all files in the project.
+ * @param projectRoot The root directory of the project.
  */
-async function getBranchDiff(
-  file: string,
-  workspaceFolder: string,
-  overrideDiff?: string
-): Promise<string> {
-  const mainBranchExists = await branchExists("main", workspaceFolder);
-  const baseBranch = mainBranchExists ? "main" : "master";
+async function processFiles(projectRoot: string): Promise<void> {
+  if (!includeExcludeJson) {
+    let includeExcludeRaw = await sendMessageToAssistant(`
+    for this prompt: ${migratePrompt}
+    
+    please tell me which file extentions to include when i filter for files. also tell me which directories, file extensions, or substrings i should exclude for the same prompt. return your answer in this json form {"fileExtensionsToInclude": string[]; "substringsPathsOrExtensionsToExclude": string[];}. each list should be exhaustive BUT it is important that these lists will be used to only include the relevant files so please be as narrow and specific as you can. for example, if we're migrating vue we probably don't care about html files. json should be the only thing in your response
+    `);
 
-  const diff =
-    overrideDiff ||
-    (await executeGitCommand(
-      `git diff ${baseBranch} -- ${file}`,
-      workspaceFolder
-    ));
-
-  return diff;
-}
-
-async function collectAndDisplaySnippets(
-  file: string,
-  workspaceFolder: string,
-  overrideDiff?: string
-): Promise<{
-  codeWithoutReferences: string[];
-  codeWithReferences: string[];
-  gitDiff: string;
-} | null> {
-  const filePath = path.join(workspaceFolder, file);
-  const text = await fs.promises.readFile(filePath, { encoding: "utf-8" });
-  const document = new TextDocument(text);
-
-  try {
-    const ast = parse(text, { loc: true, range: true, jsx: false });
-
-    const diff = overrideDiff || (await getBranchDiff(file, workspaceFolder));
-    // (await executeGitCommand(`git diff -- ${file}`, workspaceFolder));
-
-    const changedLines = parseDiff(diff);
-    const enclosingNodes = findEnclosingNodes(ast, changedLines, document);
-    // console.info({ enclosingNodes: enclosingNodes.map((e) => e.type) });
-
-    const snippets: string[] = enclosingNodes
-      .map((node) => {
-        if (node.loc) {
-          const start = new Position(
-            node.loc.start.line - 1,
-            node.loc.start.column
-          );
-          const end = new Position(node.loc.end.line - 1, node.loc.end.column);
-          return document.getText({ start, end });
-        }
-        return "";
-      })
-      .filter((snippet) => snippet !== "");
-
-    return {
-      codeWithoutReferences: snippets,
-      codeWithReferences: await Promise.all(
-        snippets.map(async (snippet) => {
-          const codeWithReferences = await extractCodeAndReferences(
-            [filePath],
-            [snippet.slice(0, TOKEN_MAX_LENGTH)],
-            3
-          );
-          return codeWithReferences;
-        })
-      ),
-      gitDiff: diff,
-    };
-  } catch (error) {
-    console.error("Failed to parse file: " + file, error);
-    return null; // Return empty or handle the error appropriately
-  }
-}
-
-/**
- * Finds the test file path based on the source file path and given test patterns and directories.
- *
- * @param sourceFilePath The full path to the source file for which tests are being sought.
- * @param testPatterns An array of test file patterns to match.
- * @param testDirs An array of directory names that typically contain test files.
- * @returns A promise that resolves to the path of the first matching test file, or null if no match is found.
- */
-async function findTestFilePath(
-  sourceFilePath: string,
-  testPatterns: string[] = ["*.spec.ts", "*.test.ts"],
-  testDirs: string[] = ["", "__tests__", "tests"]
-): Promise<string | null> {
-  const fullPath = path.resolve(sourceFilePath);
-  const sourceFileDir = path.dirname(fullPath);
-  const baseName = path.basename(sourceFilePath, path.extname(sourceFilePath)); // Base filename without extension
-  const extension = path.extname(sourceFilePath); // The extension of the source file
-
-  // Iterate through potential directories, including the current directory
-  for (const testDir of testDirs) {
-    const testDirPath = path.join(sourceFileDir, testDir);
-    console.log(`Test Directory Path: ${testDirPath}`);
-
-    for (const pattern of testPatterns) {
-      // Ensure the pattern does not include wildcards or multiple extensions
-      let cleanPattern = pattern.replace("*", ""); // Remove any wildcard characters
-      if (!cleanPattern.endsWith(extension)) {
-        cleanPattern += extension; // Ensure the extension is added only once
-      }
-      const testFileName = `${baseName}${cleanPattern}`;
-      const testFilePath = path.join(testDirPath, testFileName);
-      console.log(`Checking Test File Path: ${testFilePath}`);
-
-      // Check if the test file exists using Node.js fs module
+    try {
+      includeExcludeJson = JSON.parse(
+        (await stripJsonComments)(includeExcludeRaw?.message || "")
+          .replace("```json", "")
+          .replace("```", "") || ""
+      );
+    } catch (error) {
+      console.error(error);
+      console.log("trying again...");
       try {
-        await fs.promises.stat(testFilePath);
-        return testFilePath; // If file exists, return the path
-      } catch (error) {
-        // File does not exist, continue checking
+        includeExcludeRaw = await sendMessageToAssistant(`
+          for this prompt: ${migratePrompt}
+          
+          please tell me which file extentions to include when i filter for files. also tell me which directories, file extensions, or substrings i should exclude for the same prompt. return your answer in this json form {"fileExtensionsToInclude": string[]; "substringsPathsOrExtensionsToExclude": string[];}. json should be the only thing in your response
+          `);
+
+        includeExcludeJson = JSON.parse(
+          (await stripJsonComments)(includeExcludeRaw?.message || "")
+            .replace("```json", "")
+            .replace("```", "") || ""
+        );
+      } catch (error: any) {
+        console.error(error);
+        throw new Error(error);
       }
     }
   }
 
-  // If no test file is found in the specified directories, search the entire project
-  const projectRoot = process.cwd();
-  const globPatterns = testPatterns.map((pattern) => `**/${pattern}`);
+  const targetFiles = findTargetFiles(projectRoot);
 
-  try {
-    const files = await fg(globPatterns, { cwd: projectRoot });
-    const matchingFile = files.find(
-      (file) => path.basename(file, path.extname(file)) === baseName
-    );
-    return matchingFile ? path.resolve(projectRoot, matchingFile) : null;
-  } catch (err) {
-    console.error(err);
-    return null;
+  const MAX_FILES_TO_PROCESS = 500;
+  let i = 0;
+  for (const filePath of targetFiles) {
+    if (i === MAX_FILES_TO_PROCESS) break;
+    console.log(`migrating ${filePath}`);
+    let typeerrors: string[] = [];
+    const fileCode = minimizeCode(await unminimizeCodeFromFile(filePath));
+    const code = await generateInsertionCode(fileCode);
+    replaceAllCodeInFile(filePath, code);
+    // const formatted = await formatFileContent(filePath);
+    // replaceAllCodeInFile(filePath, formatted);
+    await fixErrorsInCodeAndOverwriteFile(filePath, code);
+
+    console.log({ typeerrors });
+    i++;
   }
+
+  await printCompletionMessage();
 }
 
-/**
- * Generates a test file name from a given source file path using verified test patterns from the project.
- * Ensures the pattern is already used within the current project before suggesting a test file name.
- *
- * @param {string} sourceFilePath - The full path to the source file.
- * @param {string[]} testPatterns - The patterns to recognize test files.
- * @param {string[]} testDirs - The directories to search for test files.
- * @returns {Promise<string | null>} - The test file name or null if no suitable pattern is found.
- */
-async function generateTestFileName(
-  sourceFilePath: string,
-  testPatterns: string[] = ["*.spec.ts", "*.test.ts"],
-  testDirs: string[] = ["", "__tests__", "tests"]
-): Promise<string | null> {
-  if (!testPatterns.length || !testDirs.length) {
-    return null; // Early return if configuration is inadequate
-  }
-
-  const dirPath = path.dirname(sourceFilePath);
-  const baseName = path.basename(sourceFilePath, path.extname(sourceFilePath));
-  const extension = path.extname(sourceFilePath);
-
-  // Iterate over each pattern to find one that is already being used in the project
-  for (const pattern of testPatterns) {
-    const cleanedPattern = cleanPattern(pattern, extension);
-    const patternExists = await checkPatternInProject(dirPath, cleanedPattern);
-
-    if (patternExists) {
-      const testFileName = `${baseName}${cleanedPattern}`;
-      return testFileName; // Return just the file name
-    }
-  }
-
-  return null; // No suitable pattern found that's already in use
+async function printCompletionMessage() {
+  const msg = await sendMessageToAssistant(
+    `based on all of the code you changed, please give me a formatted response i can put in the terminal that will look really pretty and give useful information to the user about what was changed in their code base. your response should be complete with nothing to replace, meaning all of the info that needs to be added is already added. your message should be a summary so don't include any code, just summaries of what you did to the code so the user can get a useful high level overview. your response should be only the text that i will insert into a console.log. again your response should only be the text i can put in the console.log. your response should be text. NOT JSON. ONLY TEXT IN YOUR RESPONSE`,
+    "gpt-4o",
+    "your response should be only the text that i will insert into a console.log. again your response should only be the text i can put in the console.log. your response should be text. NOT JSON. ONLY TEXT IN YOUR RESPONSE"
+  );
+  console.log(msg?.message.replace(/```/g, ""));
 }
-
-// /**
-//  * Checks if a given pattern is used in any file within the project directory.
-//  *
-//  * @param {string} projectDir - The base directory of the current project.
-//  * @param {string} pattern - The file naming pattern to check.
-//  * @returns {Promise<boolean>} - True if the pattern is found, false otherwise.
-//  */
-// async function checkPatternInProject(
-//   projectDir: string,
-//   pattern: string
-// ): Promise<boolean> {
-//   const searchPattern = new vscode.RelativePattern(projectDir, `*${pattern}*`);
-//   const files = await vscode.workspace.findFiles(searchPattern, null, 1); // Search for at least one match
-//   return files.length > 0;
-// }
-/**
- * Checks if a given pattern is used in any file within the project directory.
- *
- * @param {string} projectDir - The base directory of the current project.
- * @param {string} pattern - The file naming pattern to check.
- * @returns {Promise<boolean>} - True if the pattern is found, false otherwise.
- */
-async function checkPatternInProject(
-  projectDir: string,
-  pattern: string
-): Promise<boolean> {
-  try {
-    const files = await fs.promises.readdir(projectDir);
-    return files.some((file) => file.includes(pattern));
-  } catch (error) {
-    console.error(`Error searching for files: ${error}`);
-    return false;
-  }
-}
-
-/**
- * Cleans a test pattern by removing wildcards and ensuring it contains the correct file extension.
- *
- * @param {string} pattern - The pattern configured in settings.
- * @param {string} extension - The file extension derived from the source file.
- * @returns {string} - The cleaned pattern ready to use for filename construction.
- */
-function cleanPattern(pattern: string, extension: string): string {
-  let cleanPattern = pattern.replace(/\*/g, ""); // Remove any wildcard characters
-  if (!pattern.includes(extension)) {
-    cleanPattern += extension; // Append the extension only if not already included
-  }
-  return cleanPattern;
-}
-
-// /**
-//  * Cleans a test pattern by removing wildcards and ensuring it contains the correct file extension.
-//  *
-//  * @param {string} pattern - The pattern configured in settings.
-//  * @param {string} extension - The file extension derived from the source file.
-//  * @returns {string} - The cleaned pattern ready to use for filename construction.
-//  */
-// function cleanPattern(pattern: string, extension: string): string {
-//   let cleanPattern = pattern.replace(/\*/g, ""); // Remove any wildcard characters
-//   if (!pattern.includes(extension)) {
-//     cleanPattern += extension; // Append the extension only if not already included
-//   }
-//   return cleanPattern;
-// }
-
-export const ensureUserId = () => {
-  const config = getConfig();
-  let userId: string | undefined = config.userId;
-
-  if (!userId) {
-    userId = uuidv4();
-    setConfig("userId", userId);
-  }
-
-  return userId;
-};
-
-const sendRunStartRequest = async (userId: string): Promise<number | null> => {
-  const baseUrl = "https://91mdbkj4bk.execute-api.us-east-2.amazonaws.com";
-  const url = `${baseUrl}/celp/${userId}/run/start`;
-
-  try {
-    const response = await axios.post(url, undefined, {
-      headers: {
-        "Content-Type": "application/json",
-        "api-key":
-          "UE27O0BMxwim29eF6zqXPIHuRu1tEkGdzSTK6P9uHSr2whEAmLxedmPmBBpUox3gt3jlSyFWR18wiRosHmCpaJRwQZ1zhGMW9rMr9blyx28BkSLsFTd8S2iX2ydyPfVOZeAS",
-      },
-    });
-
-    // console.log("Response:", response.data);
-    const data = response.data as { id?: number };
-    if (data.id) {
-      return data.id;
-    } else {
-      return null;
-    }
-  } catch (error: any) {
-    if (axios.isAxiosError(error)) {
-      // console.error("Error response:", error.response?.data);
-    } else {
-      // console.error("Error:", error.message);
-    }
-    // throw error;
-    return null;
-  }
-};
-const sendTestSummaryRequest = async (
-  runId: number,
-  requestBody: TestSummary
-) => {
-  const baseUrl = "https://91mdbkj4bk.execute-api.us-east-2.amazonaws.com";
-  const url = `${baseUrl}/celp/${runId}/summary`;
-
-  try {
-    const response = await axios.post(
-      url,
-      { summary: requestBody },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "api-key":
-            "UE27O0BMxwim29eF6zqXPIHuRu1tEkGdzSTK6P9uHSr2whEAmLxedmPmBBpUox3gt3jlSyFWR18wiRosHmCpaJRwQZ1zhGMW9rMr9blyx28BkSLsFTd8S2iX2ydyPfVOZeAS",
-        },
-      }
-    );
-
-    // console.log("Response:", response.data);
-    return response.data;
-  } catch (error: any) {
-    if (axios.isAxiosError(error)) {
-      // console.error("Error response:", error.response?.data);
-    } else {
-      // console.error("Error:", error.message);
-    }
-    // throw error;
-    return null;
-  }
-};
 
 activate();

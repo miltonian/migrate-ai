@@ -2,32 +2,35 @@ import * as fs from "fs";
 import OpenAI from "openai";
 
 import * as path from "path";
-import { selectedCodeWithoutReferences } from "./index";
-import { TOKEN_MAX_LENGTH, delay, minimizeCode } from "./utils";
+import { migratePrompt } from "./index";
+import { delay } from "./utils";
 
 // const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
 
 // const THREAD_FILE_PATH = vscode.Uri.file(
-//   path.join(workspaceRoot || "", ".celp-ai/.cache/thread_id")
+//   path.join(workspaceRoot || "", ".migrate-ai/.cache/thread_id")
 // );
 // const ASSISTANT_FILE_PATH = vscode.Uri.file(
-//   path.join(workspaceRoot || "", ".celp-ai/.cache/assistant_id")
+//   path.join(workspaceRoot || "", ".migrate-ai/.cache/assistant_id")
 // );
 // const EMBEDDINGS_FILE_PATH = vscode.Uri.file(
-//   path.join(workspaceRoot || "", ".celp-ai/.cache/embeddings_output.json")
+//   path.join(workspaceRoot || "", ".migrate-ai/.cache/embeddings_output.json")
 // );
 // Get the current working directory
 const workspaceRoot = process.cwd();
 
 // Construct the file paths
-const THREAD_FILE_PATH = path.join(workspaceRoot, ".celp-ai/.cache/thread_id");
+const THREAD_FILE_PATH = path.join(
+  workspaceRoot,
+  ".migrate-ai/.cache/thread_id"
+);
 const ASSISTANT_FILE_PATH = path.join(
   workspaceRoot,
-  ".celp-ai/.cache/assistant_id"
+  ".migrate-ai/.cache/assistant_id"
 );
 const EMBEDDINGS_FILE_PATH = path.join(
   workspaceRoot,
-  ".celp-ai/.cache/embeddings_output.json"
+  ".migrate-ai/.cache/embeddings_output.json"
 );
 
 let openai: OpenAI | null = null;
@@ -146,18 +149,18 @@ export const deleteThreadIdFile = async () => {
 //   }
 // };
 // export const getAssistantIdFromFile = async (
-//   identifiableCode: string
+//   prompt: string
 // ): Promise<string | null> => {
 //   try {
 //     const fileContent = new TextDecoder().decode(
 //       await vscode.workspace.fs.readFile(ASSISTANT_FILE_PATH)
 //     );
 //     const assistants = JSON.parse(fileContent) || [];
-//     const minimizedCode = minimizeCode(identifiableCode)
+//     const minimizedCode = minimizeCode(prompt)
 //       .replace(/[^\w]/g, "")
 //       .slice(0, TOKEN_MAX_LENGTH);
 //     const assistant = assistants.find(
-//       (asst: any) => asst.metadata.identifiableCode === minimizedCode
+//       (asst: any) => asst.metadata.prompt === minimizedCode
 //     );
 //     if (assistant) {
 //       return assistant.assistantId;
@@ -173,21 +176,19 @@ export const deleteThreadIdFile = async () => {
 // };
 /**
  * Reads the assistant ID from the assistant file based on the identifiable code.
- * @param identifiableCode The identifiable code to find the assistant ID.
+ * @param prompt The identifiable code to find the assistant ID.
  * @param filePath The path to the assistant file.
  * @returns A promise that resolves to the assistant ID or null if not found.
  */
 export const getAssistantIdFromFile = async (
-  identifiableCode: string
+  prompt: string
 ): Promise<string | null> => {
   try {
     const fileContent = await fs.promises.readFile(ASSISTANT_FILE_PATH, "utf8");
     const assistants = JSON.parse(fileContent) || [];
-    const minimizedCode = minimizeCode(identifiableCode)
-      .replace(/[^\w]/g, "")
-      .slice(0, TOKEN_MAX_LENGTH);
+
     const assistant = assistants.find(
-      (asst: any) => asst.metadata.identifiableCode === minimizedCode
+      (asst: any) => asst.metadata.prompt === prompt
     );
     if (assistant) {
       return assistant.assistantId;
@@ -202,25 +203,21 @@ export const getAssistantIdFromFile = async (
   }
 };
 
-export const getAssistantIdFromSelectedCode = async (
-  autoSelectedCode: string
-) => {
-  if (autoSelectedCode || selectedCodeWithoutReferences) {
-    const assistantId = await getAssistantIdFromFile(
-      autoSelectedCode || selectedCodeWithoutReferences
-    );
-    return assistantId;
-  }
+export const getAssistantIdFromPrompt = async (prompt: string) => {
+  // if (autoSelectedCode || selectedCodeWithoutReferences) {
+  const assistantId = await getAssistantIdFromFile(prompt);
+  return assistantId;
+  // }
 };
 
 // export const saveAssistantIdToFile = async (
 //   assistantId: string,
-//   metadata: { identifiableCode: string }
+//   metadata: { prompt: string }
 // ) => {
 //   const newAssistant = {
 //     assistantId,
 //     metadata: {
-//       identifiableCode: minimizeCode(metadata.identifiableCode)
+//       prompt: minimizeCode(metadata.prompt)
 //         .replace(/[^\w]/g, "")
 //         .slice(0, TOKEN_MAX_LENGTH),
 //     },
@@ -254,14 +251,12 @@ export const getAssistantIdFromSelectedCode = async (
  */
 export const saveAssistantIdToFile = async (
   assistantId: string,
-  metadata: { identifiableCode: string }
+  metadata: { prompt: string }
 ) => {
   const newAssistant = {
     assistantId,
     metadata: {
-      identifiableCode: minimizeCode(metadata.identifiableCode)
-        .replace(/[^\w]/g, "")
-        .slice(0, TOKEN_MAX_LENGTH),
+      prompt: metadata.prompt,
     },
   };
 
@@ -366,7 +361,7 @@ export const sendMessageToChatGPT = async (
 
 export const createAndStoreAssistant = async (
   name: string,
-  identifiableCode: string,
+  prompt: string,
   instructions?: string
 ) => {
   if (!openai) {
@@ -382,7 +377,7 @@ export const createAndStoreAssistant = async (
   });
 
   if (myAssistant.id) {
-    await saveAssistantIdToFile(myAssistant.id, { identifiableCode });
+    await saveAssistantIdToFile(myAssistant.id, { prompt });
   }
   return myAssistant;
 };
@@ -407,34 +402,82 @@ export const getSystemMessageContent = (
   return combined;
 };
 
-export const sendMessageToAssistant = async (
+const waitForActiveRunToComplete = async (threadId: string) => {
+  let attempts = 0;
+  const maxAttempts = 500;
+  while (attempts < maxAttempts) {
+    try {
+      const runs = await openai!.beta.threads.runs.list(threadId);
+      const activeRun = runs.data.find((run) => !run.completed_at);
+      if (!activeRun) {
+        return;
+      }
+      await delay(1000);
+      attempts += 1;
+    } catch (error) {
+      console.error("Error checking active runs:", error);
+      return;
+    }
+  }
+  throw new Error("Timeout waiting for active run to complete");
+};
+
+const retrySendMessageToAssistant = async (
+  content: string,
+  model?: "gpt-3.5-turbo" | "gpt-4o",
+  instructions?: string,
+  isJson?: boolean,
+  retries = 3
+) => {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await sendMessageToAssistantInternal(
+        content,
+        model,
+        instructions,
+        isJson
+      );
+    } catch (error: any) {
+      if (
+        error.message.includes(
+          "An active run is already in progress for this thread"
+        )
+      ) {
+        console.warn("Active run detected. Waiting for it to complete...");
+        await delay(10000); // wait longer before retrying
+      } else {
+        throw error;
+      }
+    }
+  }
+  throw new Error(
+    "Failed to send message to assistant after multiple attempts"
+  );
+};
+
+const sendMessageToAssistantInternal = async (
   content: string,
   model?: "gpt-3.5-turbo" | "gpt-4o",
   instructions?: string,
   isJson?: boolean
 ) => {
-  // console.log('running sendMessageToAssistant')
-  // console.log('with content', content)
   if (!openai) {
     throw new Error("OpenAI not initialized");
   }
 
-  // const assistantId = await getAssistantIdFromFile();
-  const assistantId = await getAssistantIdFromSelectedCode(
-    selectedCodeWithoutReferences
-  );
+  const assistantId = await getAssistantIdFromFile(migratePrompt);
   let threadId = await getThreadIdFromFile();
 
   if (!assistantId) {
     throw new Error("Failed to obtain a valid Assistant ID");
   }
 
+  if (threadId) {
+    await waitForActiveRunToComplete(threadId);
+  }
+
   let run: OpenAI.Beta.Threads.Runs.Run | null = null;
   if (!threadId) {
-    // create new thread
-    // const emptyThread = await openai.beta.threads.create();
-    // threadId = emptyThread.id
-
     run = await openai.beta.threads.createAndRun({
       assistant_id: assistantId,
       instructions,
@@ -480,6 +523,15 @@ export const sendMessageToAssistant = async (
       threadId,
     };
   }
+};
+
+export const sendMessageToAssistant = async (
+  content: string,
+  model?: "gpt-3.5-turbo" | "gpt-4o",
+  instructions?: string,
+  isJson?: boolean
+) => {
+  return retrySendMessageToAssistant(content, model, instructions, isJson);
 };
 
 export const generateEmbedding = async (input: string) => {
